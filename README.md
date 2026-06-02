@@ -1,99 +1,88 @@
-# Budgetify Bot
+# Gastito
 
-Telegram bot for processing financial transactions using AI (Google Gemini). Migrated from Google Apps Script to Node.js + TypeScript.
+Bot de Telegram para registrar gastos personales usando IA (Google Gemini). Procesa texto, imágenes de tickets y mensajes de voz para extraer transacciones y guardarlas en Google Sheets.
+
+> Fork de [budgetify](https://github.com/dbrosio3/budgetify) creado por [@dbrosio3](https://github.com/dbrosio3). Gracias por el trabajo base!
 
 ## Features
 
-- 📝 Process text messages describing transactions
-- 📸 Analyze receipt images using Gemini Vision
-- 🎤 Transcribe and process voice messages
-- 💾 Store transactions in Google Sheets
-- 🔄 Conversation context for follow-up messages
-- ✅ Confirm/Cancel buttons for transaction approval
+- 📝 Registrar gastos por mensaje de texto
+- 📸 Analizar fotos de tickets/facturas con Gemini Vision
+- 🎤 Transcribir y procesar mensajes de voz
+- 💾 Guardar transacciones en Google Sheets
+- 🔄 Contexto conversacional para mensajes de seguimiento
+- ✅ Botones de confirmar/cancelar antes de guardar
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) (latest version)
-- [Docker](https://www.docker.com) (for local Redis) or Redis server
-- Google Cloud Service Account with Sheets API enabled
-- Telegram Bot Token
+- [Docker](https://www.docker.com) (para Redis local) o servidor Redis
+- Google Cloud Service Account con Sheets API habilitada
+- Token de Telegram Bot
 - Google Gemini API Key
-- Google Sheets Spreadsheet ID
+- ID de Google Sheets Spreadsheet
 
 ## Setup
 
-1. **Install Bun** (if not already installed):
+1. **Instalar Bun** (si no está instalado):
 ```bash
 curl -fsSL https://bun.sh/install | bash
 ```
 
-2. **Clone and install dependencies:**
+2. **Clonar e instalar dependencias:**
 ```bash
 bun install
 ```
 
-3. **Configure environment variables:**
-Copy `.env.example` to `.env` and fill in your values:
+3. **Configurar variables de entorno:**
+Copiar `.env.example` a `.env` y completar los valores:
 ```bash
 cp .env.example .env
 ```
 
-Required variables:
-- `TELEGRAM_TOKEN` - Your Telegram bot token
-- `TELEGRAM_CHAT_ID` - Your Telegram chat ID (for security)
+Variables requeridas:
+- `TELEGRAM_TOKEN` - Token del bot de Telegram
+- `TELEGRAM_CHAT_ID` - Tu chat ID de Telegram (para seguridad)
 - `GEMINI_API_KEY` - Google Gemini API key
-- `GOOGLE_SHEETS_SPREADSHEET_ID` - Your Google Sheets spreadsheet ID
-- `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON file
-  OR
-- `GOOGLE_SERVICE_ACCOUNT_JSON` - Service account JSON as string
-- `REDIS_URL` - Redis connection URL (e.g., `redis://localhost:6379` for local)
+- `GOOGLE_SHEETS_SPREADSHEET_ID` - ID de tu spreadsheet
+- `GOOGLE_APPLICATION_CREDENTIALS` - Path al JSON de service account
+  O bien
+- `GOOGLE_SERVICE_ACCOUNT_JSON` - JSON del service account como string
+- `REDIS_URL` - URL de Redis (ej: `redis://localhost:6379` para local)
 
-**Note:** For production, you can use [Upstash Redis](https://upstash.com) (free tier available). For local development, use Docker (see below).
-
-4. **Start Redis (for local development):**
-Using Docker Compose (recommended):
+4. **Iniciar Redis (para desarrollo local):**
 ```bash
 docker-compose up -d
 ```
 
-Or using Docker directly:
-```bash
-docker run -d --name budgetify-redis -p 6379:6379 redis:7-alpine
-```
+5. **Estructura del Spreadsheet:**
+La spreadsheet debe tener estas hojas:
+- `CONFIG` - Cuentas, categorías y subcategorías
+- `MIS_DATOS` - Datos personales (nombre, aliases, CBU, CUIT)
+- `GASTOS` - Hoja de gastos
+- `INGRESOS` - Hoja de ingresos
+- `TRANSFERENCIAS` - Hoja de transferencias
 
-Or if you have Redis installed locally:
-```bash
-redis-server
-```
-
-5. **Google Sheets Setup:**
-Your spreadsheet should have these sheets:
-- `CONFIG` - Configuration with accounts, categories, subcategories
-- `MIS_DATOS` - Personal data (name, aliases, CBU, CUIT)
-- `GASTOS` - Expenses sheet
-- `INGRESOS` - Income sheet
-- `TRANSFERENCIAS` - Transfers sheet
-
-6. **Run the server:**
+6. **Correr el servidor:**
 ```bash
 bun run src/server.ts
 ```
 
-For development with hot reload:
+Para desarrollo con hot reload:
 ```bash
 bun --watch src/server.ts
 ```
 
-**Note:** Bun runs TypeScript directly - no build step needed! 🚀
+**Nota:** Bun ejecuta TypeScript directamente, no hace falta compilar.
 
-## Deployment to Fly.io
+## Deployment en Fly.io
 
-1. **Install Fly CLI:**
+1. **Instalar Fly CLI:**
 ```bash
 curl -L https://fly.io/install.sh | sh
 ```
 
-2. **Login to Fly:**
+2. **Login:**
 ```bash
 fly auth login
 ```
@@ -103,7 +92,7 @@ fly auth login
 fly deploy
 ```
 
-4. **Set environment variables:**
+4. **Configurar variables de entorno:**
 ```bash
 fly secrets set TELEGRAM_TOKEN=your_token
 fly secrets set TELEGRAM_CHAT_ID=your_chat_id
@@ -113,101 +102,34 @@ fly secrets set GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 fly secrets set WEBHOOK_URL=https://your-app.fly.dev
 ```
 
-5. **Set webhook:**
-The webhook is automatically set on startup, or you can set it manually:
-```bash
-curl https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-app.fly.dev/webhook
-```
-
-## Deployment to Render (Free Tier)
-
-For zero-cost deployment on Render's free tier:
-
-1. **Follow the detailed guide**: See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for complete step-by-step instructions.
-
-2. **Quick setup:**
-   - Push code to GitHub/GitLab/Bitbucket
-   - Create new Web Service in [Render dashboard](https://dashboard.render.com)
-   - Connect repository (or use Blueprint with `render.yaml`)
-   - Set environment variables in Render dashboard
-   - Deploy
-
-3. **Keep it awake:**
-   - Render's free tier spins down after 15 minutes of inactivity
-   - Set up [UptimeRobot](https://uptimerobot.com) (free) to ping `/healthz` endpoint every 5 minutes
-   - The `/healthz` endpoint performs actual Redis I/O work to force the service to wake up (prevents edge caching)
-   - This keeps the service active at $0 cost
-   - See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for detailed UptimeRobot setup
-   - Based on: [How to Run a Full-Time App on Render's Free Tier](https://sergeiliski.medium.com/how-to-run-a-full-time-app-on-renders-free-tier-without-it-sleeping-bec26776d0b9)
-
-**Note:** Total maintenance cost is $0/month. You only pay for AI API usage (tokens).
-
-## Deployment to Northflank (Free Tier - Recommended)
-
-Northflank's free tier **does not sleep**, so no keep-alive pings needed!
-
-1. **Follow the detailed guide**: See [NORTHFLANK_DEPLOYMENT.md](./docs/NORTHFLANK_DEPLOYMENT.md) for complete step-by-step instructions.
-
-2. **Quick setup:**
-   - Push code to GitHub/GitLab/Bitbucket
-   - Create new service in [Northflank dashboard](https://app.northflank.com)
-   - Select "Build and deploy a Git repo"
-   - Choose **Dockerfile** as build type (your project already has one)
-   - Set environment variables
-   - Deploy
-
-3. **Advantages:**
-   - ✅ No sleep - Service stays awake 24/7
-   - ✅ No need for UptimeRobot
-   - ✅ Automatic deployments on git push
-   - ✅ Built-in health checks
-   - ✅ Free SSL/HTTPS
-
-**Note:** Total maintenance cost is $0/month. You only pay for AI API usage (tokens).
-
-## Project Structure
+## Estructura del proyecto
 
 ```
-budgetify/
+gastito/
 ├── src/
-│   ├── config/          # Configuration management
-│   ├── bot/             # Telegram bot handlers
-│   ├── ai/              # Gemini AI client and prompts
-│   ├── sheets/          # Google Sheets client
-│   ├── services/        # Business logic services
-│   ├── types/           # TypeScript type definitions
-│   ├── utils/           # Utilities (logger, errors)
-│   └── server.ts        # Express server
-├── tests/               # Test files
-├── legacy/              # Legacy Google Apps Script files
+│   ├── config/          # Configuración
+│   ├── bot/             # Handlers de Telegram
+│   ├── ai/              # Cliente de Gemini/Anthropic
+│   ├── sheets/          # Cliente de Google Sheets
+│   ├── services/        # Lógica de negocio
+│   ├── types/           # TypeScript types
+│   ├── utils/           # Utilidades (logger, errores)
+│   └── server.ts        # Servidor Express
+├── legacy/              # Versiones anteriores en Google Apps Script
 ├── package.json
 ├── tsconfig.json
 ├── Dockerfile
 └── fly.toml
 ```
 
-## Commands
+## Comandos
 
-- `bun run src/server.ts` - Start production server
-- `bun --watch src/server.ts` - Start development server with hot reload
-- `bun test` - Run tests
-- `bun run type-check` - Type check without running
-- `bun run lint` - Lint code
-
-**Note:** Bun runs TypeScript directly, so there's no separate build step!
-
-## Migration Notes
-
-This project was migrated from Google Apps Script to Bun + TypeScript. Key changes:
-
-- **PropertiesService** → In-memory storage with TTL (can be replaced with Redis)
-- **SpreadsheetApp** → Google Sheets API v4
-- **UrlFetchApp** → Axios
-- **Logger** → Custom logger with timestamps
-- **doPost()** → Express webhook endpoint
-- **Runtime** → Bun (faster than Node.js, runs TypeScript natively!)
+- `bun run dev` - Servidor de desarrollo con hot reload
+- `bun run start` - Servidor de producción
+- `bun test` - Tests
+- `bun run type-check` - Chequeo de tipos
+- `bun run lint` - Lint
 
 ## License
 
 MIT
-

@@ -1,7 +1,7 @@
 {
-  "name": "budgetify-bot",
+  "name": "gastito",
   "version": "1.0.0",
-  "description": "Telegram bot for financial transaction processing using AI",
+  "description": "Telegram bot para registrar gastos con IA",
   "main": "src/server.ts",
   "scripts": {
     "start": "bun run src/server.ts",
@@ -17,7 +17,7 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.{ts,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,json}\"",
-    "deploy": "bash scripts/deploy.sh deploy -a budgetify-bot",
+    "deploy": "bash scripts/deploy.sh deploy -a gastito",
     "deploy:logs": "bash scripts/deploy-logs.sh",
     "deploy:status": "bash scripts/deploy-status.sh"
   },

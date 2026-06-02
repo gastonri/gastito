@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Budgetify Bot is a Telegram bot for financial transaction processing using AI. It analyzes text, receipt images, and voice messages to extract transaction data and stores it in Google Sheets.
+Gastito Bot is a Telegram bot for financial transaction processing using AI. It analyzes text, receipt images, and voice messages to extract transaction data and stores it in Google Sheets.
 
 **Tech Stack:** TypeScript, Bun runtime, Express.js, Google Gemini/Anthropic Claude AI
 

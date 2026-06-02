@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: budgetify-bot
+    name: gastito
     runtime: node
     plan: free
     buildCommand: bun install

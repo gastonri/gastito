@@ -1,4 +1,4 @@
-app = "budgetify-bot"
+app = "gastito"
 primary_region = "iad"
 
 [build]
