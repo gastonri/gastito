@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers deploying Budgetify Bot to Northflank's free tier. Northflank's free tier **does not sleep**, so you don't need UptimeRobot or keep-alive pings!
+This guide covers deploying Gastito Bot to Northflank's free tier. Northflank's free tier **does not sleep**, so you don't need UptimeRobot or keep-alive pings!
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ This guide covers deploying Budgetify Bot to Northflank's free tier. Northflank'
 1. **Log in** to [Northflank Dashboard](https://app.northflank.com)
 2. Click **"Create new"** → **"Service"**
 3. Select **"Build and deploy a Git repo"** (Combined service)
-4. Choose your repository: `dbrosio3/budgetify`
+4. Choose your repository: `gastonri/gastito`
 5. Select branch: `main`
 
 ### 1.2 Configure Build Options
@@ -58,7 +58,7 @@ Click **"> Runtime variables"** and add:
 - **`GOOGLE_SHEETS_SPREADSHEET_ID`** - Your Google Sheets spreadsheet ID
 - **`GOOGLE_SERVICE_ACCOUNT_JSON`** - Full JSON string of your service account credentials
 - **`REDIS_URL`** - Your Redis connection URL (e.g., Upstash Redis URL)
-- **`WEBHOOK_URL`** - Your Northflank service URL (will be `https://budgetify-bot-xxxxx.northflank.app`)
+- **`WEBHOOK_URL`** - Your Northflank service URL (will be `https://gastito-xxxxx.northflank.app`)
 
 #### Optional Variables
 
@@ -88,7 +88,7 @@ Click **"Create service"** and wait for the build to complete.
 After deployment:
 
 1. Go to your service dashboard
-2. Find the **Public URL** (format: `https://budgetify-bot-xxxxx.northflank.app`)
+2. Find the **Public URL** (format: `https://gastito-xxxxx.northflank.app`)
 3. Copy this URL - you'll need it for `WEBHOOK_URL`
 
 ## Step 3: Update Environment Variables
@@ -96,7 +96,7 @@ After deployment:
 1. Go to your service → **"Environment variables"**
 2. Update **`WEBHOOK_URL`** to your actual service URL:
    ```
-   WEBHOOK_URL=https://budgetify-bot-xxxxx.northflank.app
+   WEBHOOK_URL=https://gastito-xxxxx.northflank.app
    ```
 3. The service will automatically restart with the new variable
 
@@ -113,12 +113,12 @@ The webhook will be set automatically on server startup if `WEBHOOK_URL` is conf
 Run this command (replace `<YOUR_TELEGRAM_TOKEN>` and `<YOUR_NORTHFLANK_URL>`):
 
 ```bash
-curl https://api.telegram.org/bot<YOUR_TELEGRAM_TOKEN>/setWebhook?url=https://budgetify-bot-xxxxx.northflank.app/webhook
+curl https://api.telegram.org/bot<YOUR_TELEGRAM_TOKEN>/setWebhook?url=https://gastito-xxxxx.northflank.app/webhook
 ```
 
 Or visit this URL in your browser:
 ```
-https://api.telegram.org/bot<YOUR_TELEGRAM_TOKEN>/setWebhook?url=https://budgetify-bot-xxxxx.northflank.app/webhook
+https://api.telegram.org/bot<YOUR_TELEGRAM_TOKEN>/setWebhook?url=https://gastito-xxxxx.northflank.app/webhook
 ```
 
 ### Verify Webhook
@@ -137,9 +137,9 @@ curl https://api.telegram.org/bot<YOUR_TELEGRAM_TOKEN>/getWebhookInfo
    - Check for any errors
 
 2. **Test health endpoints:**
-   - Visit `https://budgetify-bot-xxxxx.northflank.app/health`
+   - Visit `https://gastito-xxxxx.northflank.app/health`
      - Should return: `{"status":"ok","timestamp":"..."}`
-   - Visit `https://budgetify-bot-xxxxx.northflank.app/healthz`
+   - Visit `https://gastito-xxxxx.northflank.app/healthz`
      - Should return: `{"status":"ok",...,"redis":true,...}`
 
 3. **Test Telegram bot:**

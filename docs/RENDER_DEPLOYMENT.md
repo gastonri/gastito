@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers deploying Budgetify Bot to Render's free tier and keeping it awake using UptimeRobot to prevent the service from sleeping after 15 minutes of inactivity.
+This guide covers deploying Gastito to Render's free tier and keeping it awake using UptimeRobot to prevent the service from sleeping after 15 minutes of inactivity.
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ This guide covers deploying Budgetify Bot to Render's free tier and keeping it a
 2. Click **"New +"** → **"Web Service"**
 3. **Connect your Git repository** (authorize Render if needed)
 4. **Configure the service:**
-   - **Name**: `budgetify-bot`
+   - **Name**: `gastito`
    - **Environment**: `Node` (Render supports Bun through Node.js runtime)
    - **Region**: Choose closest to you (free tier available)
    - **Branch**: `main` (or your default branch)
@@ -50,7 +50,7 @@ In Render dashboard → Your Service → **Environment**, add the following vari
 - **`GEMINI_API_KEY`** - Google Gemini API key
 - **`GOOGLE_SHEETS_SPREADSHEET_ID`** - Your Google Sheets spreadsheet ID
 - **`GOOGLE_SERVICE_ACCOUNT_JSON`** - Full JSON string of your service account credentials (paste the entire JSON content, not a file path)
-- **`WEBHOOK_URL`** - Your Render URL (e.g., `https://budgetify-bot.onrender.com`)
+- **`WEBHOOK_URL`** - Your Render URL (e.g., `https://gastito.onrender.com`)
 
 ### Optional Variables
 
@@ -96,7 +96,7 @@ The `/healthz` endpoint is specifically designed for this purpose:
 2. Click **"Add New Monitor"**
 3. **Configure the monitor:**
    - **Monitor Type**: Select **"HTTP(s)"**
-   - **Friendly Name**: `Budgetify Bot Keep-Alive` (or any name you prefer)
+   - **Friendly Name**: `Gastito Keep-Alive` (or any name you prefer)
    - **URL**: `https://your-service-name.onrender.com/healthz`
      - Replace `your-service-name` with your actual Render service name
    - **Monitoring Interval**: **5 minutes** (this is critical - must be less than 15 minutes)
@@ -265,7 +265,7 @@ If you're migrating from Fly.io:
 1. Keep your `fly.toml` file for reference
 2. Export environment variables from Fly.io:
    ```bash
-   fly secrets list -a budgetify-bot
+   fly secrets list -a gastito
    ```
 3. Set them in Render dashboard
 4. Update `WEBHOOK_URL` to your new Render URL

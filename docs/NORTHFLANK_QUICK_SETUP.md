@@ -5,11 +5,11 @@ Based on the "Create new" service screen you're seeing:
 ## ✅ Step-by-Step Configuration
 
 ### 1. Basic Information
-- **Service name**: `budgetify-bot` ✅ (already filled)
+- **Service name**: `gastito` ✅ (already filled)
 - **Tags**: (optional, skip for now)
 
 ### 2. Repository
-- **Repository**: `dbrosio3/budgetify` ✅ (already selected)
+- **Repository**: `gastonri/gastito` ✅ (already selected)
 - **Branch**: `main` ✅ (already selected)
 
 ### 3. Build Options
@@ -41,7 +41,7 @@ GEMINI_API_KEY=your_gemini_key_here
 GOOGLE_SHEETS_SPREADSHEET_ID=your_spreadsheet_id_here
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 REDIS_URL=redis://default:password@host:port
-WEBHOOK_URL=https://budgetify-bot-xxxxx.northflank.app
+WEBHOOK_URL=https://gastito-xxxxx.northflank.app
 ```
 
 **Note**: 
@@ -73,7 +73,7 @@ DEFAULT_AI_PROVIDER=gemini
 
 1. **Get your service URL**:
    - Go to service dashboard
-   - Copy the Public URL (format: `https://budgetify-bot-xxxxx.northflank.app`)
+   - Copy the Public URL (format: `https://gastito-xxxxx.northflank.app`)
 
 2. **Update WEBHOOK_URL**:
    - Go to Environment variables

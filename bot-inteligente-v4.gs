@@ -3,7 +3,7 @@ const TELEGRAM_TOKEN = "TELEGRAM_TOKEN";
 const GEMINI_API_KEY = "GEMINI_API_KEY";
 const WEBHOOK_URL = "WEBHOOK_URL";
 const MODEL_NAME = "gemini-2.5-flash"; // Modelo estable con visión y audio - Free Tier
-const MI_CHAT_ID = 123;
+const MI_CHAT_ID = 0; // YOUR_CHAT_ID
 
 // ============================================================
 // PUNTO DE ENTRADA - doPost()
