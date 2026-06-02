@@ -6,6 +6,15 @@ export const config = {
     chatId: parseInt(process.env.TELEGRAM_CHAT_ID || "0", 10),
     partnerChatId: process.env.TELEGRAM_PARTNER_CHAT_ID ? parseInt(process.env.TELEGRAM_PARTNER_CHAT_ID, 10) : null,
     webhookUrl: process.env.WEBHOOK_URL || "",
+    userNames: Object.fromEntries(
+      (process.env.TELEGRAM_USER_NAMES || "")
+        .split(",")
+        .filter(Boolean)
+        .map((entry) => {
+          const [id, ...nameParts] = entry.trim().split(":");
+          return [id.trim(), nameParts.join(":").trim()];
+        })
+    ) as Record<string, string>,
   },
   ai: {
     defaultProvider: (

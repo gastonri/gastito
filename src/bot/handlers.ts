@@ -13,6 +13,7 @@ import { AudioProcessor } from "../services/audio-processor";
 import { contextManager } from "../services/context-manager";
 import { pendingOperations } from "../services/pending-operations";
 import { Logger } from "../utils/logger";
+import { config } from "../config";
 import { UserPreferencesService } from "../services/user-preferences";
 import { mapTransactionIndices } from "../services/validator";
 import { ResponseParser } from "../services/response-parser";
@@ -153,7 +154,7 @@ export class MessageHandlers {
 
     // Map numbered AI response fields to actual string values
     const mappedResult = mapTransactionIndices(result, config);
-    mappedResult.datos.persona = message.from?.first_name || "Usuario";
+    mappedResult.datos.persona = config.telegram.userNames[String(message.chat.id)] || message.from?.first_name || "Usuario";
 
     return mappedResult;
   }
@@ -221,7 +222,7 @@ export class MessageHandlers {
 
     // Map numbered AI response fields to actual string values
     const mappedResult = mapTransactionIndices(result, config);
-    mappedResult.datos.persona = message.from?.first_name || "Usuario";
+    mappedResult.datos.persona = config.telegram.userNames[String(message.chat.id)] || message.from?.first_name || "Usuario";
 
     return mappedResult;
   }
@@ -318,7 +319,7 @@ export class MessageHandlers {
 
     // Map numbered AI response fields to actual string values
     const mappedResult = mapTransactionIndices(result, config);
-    mappedResult.datos.persona = message.from?.first_name || "Usuario";
+    mappedResult.datos.persona = config.telegram.userNames[String(message.chat.id)] || message.from?.first_name || "Usuario";
 
     return mappedResult;
   }
