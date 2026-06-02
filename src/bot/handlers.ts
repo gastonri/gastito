@@ -42,7 +42,6 @@ export class MessageHandlers {
     // Build prompt (pass both confirmed context and pending operation)
     const prompt = PromptBuilder.buildTextPrompt(
       text,
-      config.cuentas,
       config.categoriasMap,
       contextoPrevio,
       operacionPendiente
@@ -147,13 +146,14 @@ export class MessageHandlers {
 
       // Default values for missing fields
       if (!result.datos.moneda) result.datos.moneda = "ARS";
-      if (!result.datos.split) result.datos.split = "Solo mío";
       if (!result.datos.cuotas) result.datos.cuotas = 1;
       if (!result.datos.n_cuota) result.datos.n_cuota = 1;
+      if (result.datos.mi_parte === undefined) result.datos.mi_parte = 100;
     }
 
     // Map numbered AI response fields to actual string values
     const mappedResult = mapTransactionIndices(result, config);
+    mappedResult.datos.persona = message.from?.first_name || "Usuario";
 
     return mappedResult;
   }
@@ -167,16 +167,11 @@ export class MessageHandlers {
 
     // Get config
     const config = await this.sheetsClient.getConfig();
-    const misDatos = await this.sheetsClient.getPersonalData();
 
     // Build prompt
     const prompt = PromptBuilder.buildVisionPrompt(
       caption,
-      config.cuentas,
-      config.macroCategorias,
-      config.subcategorias,
-      config.categoriasMap,
-      misDatos
+      config.categoriasMap
     );
 
     // Get user's preferred AI provider and get the client
@@ -226,6 +221,7 @@ export class MessageHandlers {
 
     // Map numbered AI response fields to actual string values
     const mappedResult = mapTransactionIndices(result, config);
+    mappedResult.datos.persona = message.from?.first_name || "Usuario";
 
     return mappedResult;
   }
@@ -266,7 +262,6 @@ export class MessageHandlers {
 
     const prompt = PromptBuilder.buildTextPrompt(
       textoTranscrito,
-      config.cuentas,
       config.categoriasMap,
       contextoPrevio,
       operacionPendiente
@@ -323,6 +318,7 @@ export class MessageHandlers {
 
     // Map numbered AI response fields to actual string values
     const mappedResult = mapTransactionIndices(result, config);
+    mappedResult.datos.persona = message.from?.first_name || "Usuario";
 
     return mappedResult;
   }
@@ -345,7 +341,6 @@ export class MessageHandlers {
     const prompt = PromptBuilder.buildConversationalPrompt(
       conversationHistory,
       text,
-      config.cuentas,
       config.categoriasMap,
       pendingQuestions,
       partialTransaction
@@ -380,29 +375,19 @@ export class MessageHandlers {
    */
   private enrichQuestionOptions(
     questions: ClarificationQuestion[],
-    config: { cuentas: string[]; categoriasMap: import("../types").CategoryMap }
+    config: { categoriasMap: import("../types").CategoryMap }
   ): ClarificationQuestion[] {
     return questions.map((q) => {
       if (q.questionType === "select" && (!q.options || q.options.length === 0)) {
         switch (q.field) {
-          case "cuenta":
-          case "origen":
-          case "destino":
-            q.options = config.cuentas;
-            break;
           case "macro_categoria":
             q.options = Object.keys(config.categoriasMap);
             break;
           case "subcategoria":
-            // If we have a macro category in the partial transaction, use its subcategories
-            // Otherwise use all subcategories
             q.options = Object.values(config.categoriasMap).flat();
             break;
           case "moneda":
-            q.options = ["ARS", "USD", "EUR"];
-            break;
-          case "split":
-            q.options = ["Solo mío", "Compartido 50/50"];
+            q.options = ["ARS", "USD"];
             break;
         }
       }

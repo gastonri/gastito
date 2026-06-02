@@ -4,6 +4,7 @@ export const config = {
   telegram: {
     token: process.env.TELEGRAM_TOKEN || "",
     chatId: parseInt(process.env.TELEGRAM_CHAT_ID || "0", 10),
+    partnerChatId: process.env.TELEGRAM_PARTNER_CHAT_ID ? parseInt(process.env.TELEGRAM_PARTNER_CHAT_ID, 10) : null,
     webhookUrl: process.env.WEBHOOK_URL || "",
   },
   ai: {

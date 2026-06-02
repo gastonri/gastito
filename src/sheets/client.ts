@@ -15,7 +15,6 @@ function formatDateForSheets(date: Date): string {
 }
 import {
   CategoryMap,
-  PersonalData,
   ConfigData,
   TransactionData,
   GoogleSheetsSpreadsheet,
@@ -77,18 +76,8 @@ export class SheetsClient {
       const sheetName = "CONFIG";
       const lastRow = await this.getLastRow(sheetName);
 
-      // Read accounts (column A)
-      const accountsRange = `${sheetName}!A2:A${lastRow}`;
-      const accountsResponse = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: accountsRange,
-      });
-      const cuentas = ((accountsResponse.data.values as unknown[][]) || [])
-        .flat()
-        .filter((v): v is string => typeof v === "string" && v !== "");
-
-      // Read macro categories (column B)
-      const macroRange = `${sheetName}!B2:B${lastRow}`;
+      // Read macro categories (column A)
+      const macroRange = `${sheetName}!A2:A${lastRow}`;
       const macroResponse = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range: macroRange,
@@ -97,8 +86,8 @@ export class SheetsClient {
         .flat()
         .filter((v): v is string => typeof v === "string" && v !== "");
 
-      // Read subcategories (column C)
-      const subRange = `${sheetName}!C2:C${lastRow}`;
+      // Read subcategories (column B)
+      const subRange = `${sheetName}!B2:B${lastRow}`;
       const subResponse = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range: subRange,
@@ -107,11 +96,9 @@ export class SheetsClient {
         .flat()
         .filter((v): v is string => typeof v === "string" && v !== "");
 
-      // Create category map
       const categoriasMap = await this.createCategoryMap(sheetName, lastRow);
 
       return {
-        cuentas,
         macroCategorias,
         subcategorias,
         categoriasMap,
@@ -124,60 +111,12 @@ export class SheetsClient {
     }
   }
 
-  async getPersonalData(): Promise<PersonalData> {
-    if (!this.sheets) {
-      throw new SheetsAPIError("Sheets client not initialized");
-    }
-    try {
-      const sheetName = "MIS_DATOS";
-
-      // Check if sheet exists
-      const sheetExists = await this.sheetExists(sheetName);
-      if (!sheetExists) {
-        Logger.warn("MIS_DATOS sheet not found, using defaults");
-        return {
-          nombre: "TU NOMBRE COMPLETO",
-          alias: ["tu.alias.mp", "tu.cvu"],
-          cbu: "",
-          cuit: "",
-        };
-      }
-
-      // Read personal data
-      const range = `${sheetName}!B2:B5`;
-      const response = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range,
-      });
-
-      const values = (response.data.values as unknown[][]) || [];
-      const nombre = (values[0]?.[0] as string) || "Usuario";
-      const aliasStr = (values[1]?.[0] as string) || "";
-      const alias = aliasStr
-        .split(",")
-        .map((a: string) => a.trim())
-        .filter((a: string) => a);
-      const cbu = (values[2]?.[0] as string) || "";
-      const cuit = (values[3]?.[0] as string) || "";
-
-      return { nombre, alias, cbu, cuit };
-    } catch (error) {
-      Logger.error("Error reading personal data from Sheets", error);
-      return {
-        nombre: "TU NOMBRE COMPLETO",
-        alias: ["tu.alias.mp", "tu.cvu"],
-        cbu: "",
-        cuit: "",
-      };
-    }
-  }
-
   async createCategoryMap(sheetName: string, lastRow: number): Promise<CategoryMap> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
     }
     try {
-      const range = `${sheetName}!B2:C${lastRow}`;
+      const range = `${sheetName}!A2:B${lastRow}`;
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range,
@@ -211,7 +150,7 @@ export class SheetsClient {
 
     try {
       const lastRow = await this.getLastRow(sheetName);
-      const range = `${sheetName}!C2:C${lastRow}`;
+      const range = `${sheetName}!B2:B${lastRow}`;
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range,
@@ -299,13 +238,11 @@ export class SheetsClient {
       const lastRow = await this.findLastRowWithData(sheetName);
       const newRow = lastRow + 1;
 
-      // Find subcategory with emoji
       const subcategoriaConEmoji = await this.findSubcategoryWithEmoji(
         data.subcategoria || "",
         "CONFIG"
       );
 
-      // Parse date
       let fecha: Date;
       if (typeof data.fecha === "string") {
         const parsedDate = parseDate(data.fecha);
@@ -314,223 +251,50 @@ export class SheetsClient {
         fecha = new Date();
       }
 
-      // Write data in two parts to avoid protected formula columns I and L
-      // First: Write columns A-H (date through n_cuota)
+      const cuotas = parseInt(String(data.cuotas || 1), 10);
+      const nCuota = parseInt(String(data.n_cuota || 1), 10);
+      const miParte = data.mi_parte !== undefined ? data.mi_parte : 100;
+
+      // Write A:I (fecha through n_cuota)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A${newRow}:H${newRow}`,
+        range: `${sheetName}!A${newRow}:I${newRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [
-            [
-              formatDateForSheets(fecha),
-              data.descripcion?.trim() || "",
-              data.macro_categoria?.trim() || "",
-              subcategoriaConEmoji,
-              data.cuenta?.trim() || "",
-              parseFloat(String(data.monto || 0)),
-              String(parseInt(String(data.cuotas || 1), 10)),
-              String(parseInt(String(data.n_cuota || 1), 10)),
-            ],
-          ],
+          values: [[
+            formatDateForSheets(fecha),
+            (data.persona || "").trim(),
+            (data.descripcion || "").trim(),
+            (data.macro_categoria || "").trim(),
+            subcategoriaConEmoji,
+            parseFloat(String(data.monto || 0)),
+            data.moneda || "ARS",
+            String(cuotas),
+            String(nCuota),
+          ]],
         },
       });
 
-      // Second: Write columns J, K (moneda, split)
+      // Write J: imp_mensual formula, K: mi_parte_%, L: link, M: notas
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!J${newRow}:K${newRow}`,
+        range: `${sheetName}!J${newRow}:M${newRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [[data.moneda || "ARS", data.split || "Solo mío"]],
+          values: [[
+            `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow}),"")`,
+            String(miParte),
+            (data.link || "").trim(),
+            (data.notas || "").trim(),
+          ]],
         },
       });
-
-      // Third: Write columns M, N (link, notas)
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!M${newRow}:N${newRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [[(data.link || "").trim(), (data.notas || "").trim()]],
-        },
-      });
-
-      // Set formulas for protected columns I and L
-      // Note: These will only work if the service account has permission to edit protected ranges
-      // If these fail, the data is still written - formulas can be added manually or protection adjusted
-      try {
-        await this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
-          range: `${sheetName}!I${newRow}`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [[`=IFERROR(IF(G${newRow} > 0, F${newRow} / G${newRow}, F${newRow}), "")`]],
-          },
-        });
-      } catch (formulaError) {
-        Logger.warn(
-          `Could not write formula to column I (row ${newRow}): ${formulaError instanceof Error ? formulaError.message : String(formulaError)}`
-        );
-        Logger.warn(
-          "Make sure the service account has permission to edit protected ranges, or add the formula manually"
-        );
-      }
-
-      try {
-        await this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
-          range: `${sheetName}!L${newRow}`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [[`=IFERROR(IF(EXACT(K${newRow},"Compartido 50/50"), I${newRow}/2, ""), "")`]],
-          },
-        });
-      } catch (formulaError) {
-        Logger.warn(
-          `Could not write formula to column L (row ${newRow}): ${formulaError instanceof Error ? formulaError.message : String(formulaError)}`
-        );
-        Logger.warn(
-          "Make sure the service account has permission to edit protected ranges, or add the formula manually"
-        );
-      }
 
       Logger.log(`✅ GASTO written successfully in row ${newRow}`);
     } catch (error) {
       Logger.error("Error writing GASTO to Sheets", error);
       throw new SheetsAPIError(
         `Failed to write GASTO: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  async writeIngreso(data: TransactionData): Promise<void> {
-    if (!this.sheets) {
-      throw new SheetsAPIError("Sheets client not initialized");
-    }
-    try {
-      const sheetName = "INGRESOS";
-      const lastRow = await this.findLastRowWithData(sheetName);
-      const newRow = lastRow + 1;
-
-      // Parse date
-      let fecha: Date;
-      if (typeof data.fecha === "string") {
-        const parsedDate = parseDate(data.fecha);
-        fecha = parsedDate || new Date();
-      } else {
-        fecha = new Date();
-      }
-
-      // Note: Don't write to column G (protected), only write A-F
-      const rowData = [
-        formatDateForSheets(fecha),
-        (data.fuente || data.descripcion || "").trim(),
-        (data.cuenta || "").trim(),
-        String(parseFloat(String(data.monto || 0))),
-        data.moneda || "ARS",
-        String(parseFloat(String(data.cotizacion || 1))),
-        // G: TOTAL (ARS) - formula (PROTECTED, don't write)
-      ];
-
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A${newRow}:F${newRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [rowData] },
-      });
-
-      // Set formula in protected column G
-      try {
-        await this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
-          range: `${sheetName}!G${newRow}`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [
-              [
-                `=IFERROR(IF(E${newRow}="USD", D${newRow}*F${newRow}, IF(E${newRow}="EUR", D${newRow}*F${newRow}, D${newRow})), "")`,
-              ],
-            ],
-          },
-        });
-      } catch (formulaError) {
-        Logger.warn(
-          `Could not write formula to column G (row ${newRow}): ${formulaError instanceof Error ? formulaError.message : String(formulaError)}`
-        );
-        Logger.warn(
-          "Make sure the service account has permission to edit protected ranges, or add the formula manually"
-        );
-      }
-
-      Logger.log(`✅ INGRESO written successfully in row ${newRow}`);
-    } catch (error) {
-      Logger.error("Error writing INGRESO to Sheets", error);
-      throw new SheetsAPIError(
-        `Failed to write INGRESO: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  async writeTransferencia(data: TransactionData): Promise<void> {
-    if (!this.sheets) {
-      throw new SheetsAPIError("Sheets client not initialized");
-    }
-    try {
-      const sheetName = "TRANSFERENCIAS";
-      const lastRow = await this.findLastRowWithData(sheetName);
-      const newRow = lastRow + 1;
-
-      // Parse date
-      let fecha: Date;
-      if (typeof data.fecha === "string") {
-        const parsedDate = parseDate(data.fecha);
-        fecha = parsedDate || new Date();
-      } else {
-        fecha = new Date();
-      }
-
-      // ✅ FIX: Don't write to column F (protected), only write A-E
-      const rowData = [
-        formatDateForSheets(fecha),
-        data.origen?.trim() || "",
-        String(parseFloat(String(data.monto_salida || 0))),
-        data.destino?.trim() || "",
-        String(parseFloat(String(data.monto_entrada || 0))),
-        // F: BRECHA % - formula (PROTECTED, don't write)
-      ];
-
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A${newRow}:E${newRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [rowData] },
-      });
-
-      // Set formula in protected column F
-      try {
-        await this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.spreadsheetId,
-          range: `${sheetName}!F${newRow}`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [[`=IFERROR(IF(C${newRow}>0,((E${newRow}-C${newRow})/C${newRow})*100,""),"")`]],
-          },
-        });
-      } catch (formulaError) {
-        Logger.warn(
-          `Could not write formula to column F (row ${newRow}): ${formulaError instanceof Error ? formulaError.message : String(formulaError)}`
-        );
-        Logger.warn(
-          "Make sure the service account has permission to edit protected ranges, or add the formula manually"
-        );
-      }
-
-      Logger.log(`✅ TRANSFERENCIA written successfully in row ${newRow}`);
-    } catch (error) {
-      Logger.error("Error writing TRANSFERENCIA to Sheets", error);
-      throw new SheetsAPIError(
-        `Failed to write TRANSFERENCIA: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

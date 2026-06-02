@@ -47,9 +47,6 @@ export class Validator {
         `El campo 'monto' debe ser un número positivo. Valor recibido: ${data.monto}`
       );
     }
-    if (!data.cuenta || data.cuenta.trim() === "") {
-      throw new ValidationError("El campo 'cuenta' es requerido para un GASTO");
-    }
     if (!data.macro_categoria || data.macro_categoria.trim() === "") {
       throw new ValidationError("El campo 'macro_categoria' es requerido para un GASTO");
     }
@@ -61,11 +58,11 @@ export class Validator {
     this.validateDate(data.fecha);
 
     // Validate currency
-    const monedasValidas = ["ARS", "USD", "EUR"];
+    const monedasValidas = ["ARS", "USD"];
     const moneda = data.moneda || "ARS";
     if (!monedasValidas.includes(moneda)) {
       throw new ValidationError(
-        `Moneda inválida. Valores permitidos: ARS, USD, EUR. Recibido: ${moneda}`
+        `Moneda inválida. Valores permitidos: ARS, USD. Recibido: ${moneda}`
       );
     }
 
@@ -82,67 +79,10 @@ export class Validator {
     }
   }
 
-  static validateIngreso(data: TransactionData): void {
-    if (!data.fuente && !data.descripcion) {
-      throw new ValidationError("El campo 'fuente' o 'descripcion' es requerido para un INGRESO");
-    }
-    if (!data.monto || isNaN(data.monto) || data.monto <= 0) {
-      throw new ValidationError(
-        `El campo 'monto' debe ser un número positivo. Valor recibido: ${data.monto}`
-      );
-    }
-    if (!data.cuenta || data.cuenta.trim() === "") {
-      throw new ValidationError("El campo 'cuenta' es requerido para un INGRESO");
-    }
-
-    this.validateDate(data.fecha);
-
-    const monedasValidas = ["ARS", "USD", "EUR"];
-    const monedaIng = data.moneda || "ARS";
-    if (!monedasValidas.includes(monedaIng)) {
-      throw new ValidationError(
-        `Moneda inválida. Valores permitidos: ARS, USD, EUR. Recibido: ${monedaIng}`
-      );
-    }
-
-    const cotizacion = parseFloat(String(data.cotizacion || 1));
-    if (isNaN(cotizacion) || cotizacion <= 0) {
-      throw new ValidationError(
-        `La cotización debe ser un número positivo. Valor recibido: ${data.cotizacion}`
-      );
-    }
-  }
-
-  static validateTransferencia(data: TransactionData): void {
-    if (!data.origen || data.origen.trim() === "") {
-      throw new ValidationError("El campo 'origen' es requerido para una TRANSFERENCIA");
-    }
-    if (!data.destino || data.destino.trim() === "") {
-      throw new ValidationError("El campo 'destino' es requerido para una TRANSFERENCIA");
-    }
-    if (!data.monto_salida || isNaN(data.monto_salida) || data.monto_salida <= 0) {
-      throw new ValidationError(
-        `El campo 'monto_salida' debe ser un número positivo. Valor recibido: ${data.monto_salida}`
-      );
-    }
-    if (!data.monto_entrada || isNaN(data.monto_entrada) || data.monto_entrada <= 0) {
-      throw new ValidationError(
-        `El campo 'monto_entrada' debe ser un número positivo. Valor recibido: ${data.monto_entrada}`
-      );
-    }
-
-    this.validateDate(data.fecha);
-  }
-
   static validateTransaction(result: TransactionResult): void {
     if (result.tipo === "GASTO") {
       this.validateGasto(result.datos);
-    } else if (result.tipo === "INGRESO") {
-      this.validateIngreso(result.datos);
-    } else if (result.tipo === "TRANSFERENCIA") {
-      this.validateTransferencia(result.datos);
     } else {
-      // TypeScript should never reach here, but handle it for runtime safety
       const tipo: string = result.tipo;
       throw new ValidationError(`Tipo de operación desconocido: ${tipo}`);
     }
@@ -174,7 +114,7 @@ export class Validator {
   }
 }
 
-import { MONEDA_OPTIONS, SPLIT_OPTIONS } from "../types";
+import { MONEDA_OPTIONS } from "../types";
 
 /**
  * Helper to extract text without emoji
@@ -205,15 +145,6 @@ function mapIndexToValue<T extends string>(
   return options[num - 1];
 }
 
-/**
- * Maps numbered AI response fields to actual string values.
- * The AI returns indices (1-indexed) for cuenta, macro_categoria, subcategoria, moneda, split.
- * This function converts those indices back to the actual string values.
- *
- * @param result - The transaction result from AI (with numbered fields)
- * @param config - The config data containing valid accounts, categories, etc.
- * @returns The mapped transaction result with string values
- */
 export function mapTransactionIndices(
   result: TransactionResult,
   config: ConfigData
@@ -221,61 +152,19 @@ export function mapTransactionIndices(
   const datos = { ...result.datos };
   const macroKeys = Object.keys(config.categoriasMap);
 
-  // Map cuenta (account) - for GASTO and INGRESO
-  if (result.tipo === "GASTO" || result.tipo === "INGRESO") {
-    const cuentaIndex = datos.cuenta as unknown as number;
-    datos.cuenta = mapIndexToValue(cuentaIndex, config.cuentas);
-    Logger.log(`Mapped cuenta: ${cuentaIndex} → "${datos.cuenta}"`);
-  }
+  const macroIndex = datos.macro_categoria as unknown as number;
+  datos.macro_categoria = mapIndexToValue(macroIndex, macroKeys);
+  Logger.log(`Mapped macro_categoria: ${macroIndex} → "${datos.macro_categoria}"`);
 
-  // Map macro_categoria and subcategoria - for GASTO
-  if (result.tipo === "GASTO") {
-    const macroIndex = datos.macro_categoria as unknown as number;
-    datos.macro_categoria = mapIndexToValue(macroIndex, macroKeys);
-    Logger.log(`Mapped macro_categoria: ${macroIndex} → "${datos.macro_categoria}"`);
+  const validSubcategorias = config.categoriasMap[datos.macro_categoria] || [];
+  const subcatIndex = datos.subcategoria as unknown as number;
+  const rawSubcat = mapIndexToValue(subcatIndex, validSubcategorias);
+  datos.subcategoria = extractTextWithoutEmoji(rawSubcat);
+  Logger.log(`Mapped subcategoria: ${subcatIndex} → "${datos.subcategoria}"`);
 
-    // Get subcategories for the selected macro
-    const validSubcategorias = config.categoriasMap[datos.macro_categoria] || [];
-    const subcatIndex = datos.subcategoria as unknown as number;
-    const rawSubcat = mapIndexToValue(subcatIndex, validSubcategorias);
-    datos.subcategoria = extractTextWithoutEmoji(rawSubcat);
-    Logger.log(`Mapped subcategoria: ${subcatIndex} → "${datos.subcategoria}"`);
+  const monedaIndex = datos.moneda as unknown as number;
+  datos.moneda = mapIndexToValue(monedaIndex, MONEDA_OPTIONS);
+  Logger.log(`Mapped moneda: ${monedaIndex} → "${datos.moneda}"`);
 
-    // Map moneda
-    const monedaIndex = datos.moneda as unknown as number;
-    datos.moneda = mapIndexToValue(monedaIndex, MONEDA_OPTIONS);
-    Logger.log(`Mapped moneda: ${monedaIndex} → "${datos.moneda}"`);
-
-    // Map split
-    const splitIndex = datos.split as unknown as number;
-    datos.split = mapIndexToValue(splitIndex, SPLIT_OPTIONS);
-    Logger.log(`Mapped split: ${splitIndex} → "${datos.split}"`);
-  }
-
-  // Map INGRESO moneda
-  if (result.tipo === "INGRESO") {
-    const monedaIndex = datos.moneda as unknown as number;
-    datos.moneda = mapIndexToValue(monedaIndex, MONEDA_OPTIONS);
-    Logger.log(`Mapped moneda: ${monedaIndex} → "${datos.moneda}"`);
-  }
-
-  // Map TRANSFERENCIA origen/destino
-  if (result.tipo === "TRANSFERENCIA") {
-    const origenIndex = datos.origen as unknown as number;
-    if (origenIndex !== undefined) {
-      datos.origen = mapIndexToValue(origenIndex, config.cuentas);
-      Logger.log(`Mapped origen: ${origenIndex} → "${datos.origen}"`);
-    }
-
-    const destinoIndex = datos.destino as unknown as number;
-    if (destinoIndex !== undefined) {
-      datos.destino = mapIndexToValue(destinoIndex, config.cuentas);
-      Logger.log(`Mapped destino: ${destinoIndex} → "${datos.destino}"`);
-    }
-  }
-
-  return {
-    ...result,
-    datos,
-  };
+  return { ...result, datos };
 }

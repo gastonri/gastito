@@ -7,6 +7,13 @@ export interface TelegramUpdate {
 
 export interface TelegramMessage {
   message_id: number;
+  from?: {
+    id: number;
+    is_bot: boolean;
+    first_name: string;
+    last_name?: string;
+    username?: string;
+  };
   chat: {
     id: number;
     type: string;
@@ -45,37 +52,26 @@ export interface TelegramCallbackQuery {
 }
 
 // Transaction Types
-export type TransactionType = "GASTO" | "INGRESO" | "TRANSFERENCIA";
-export type Moneda = "ARS" | "USD" | "EUR";
-export type Split = "Solo mío" | "Compartido 50/50";
+export type TransactionType = "GASTO";
+export type Moneda = "ARS" | "USD";
 export type Confianza = "ALTA" | "MEDIA" | "BAJA";
 
 // Valid options arrays (use these for prompts and validation)
-export const MONEDA_OPTIONS: readonly Moneda[] = ["ARS", "USD", "EUR"] as const;
-export const SPLIT_OPTIONS: readonly Split[] = ["Solo mío", "Compartido 50/50"] as const;
+export const MONEDA_OPTIONS: readonly Moneda[] = ["ARS", "USD"] as const;
 
 export interface TransactionData {
   fecha?: string;
+  persona?: string;
   descripcion?: string;
   macro_categoria?: string;
   subcategoria?: string;
-  cuenta?: string;
   monto?: number;
   moneda?: Moneda;
   cuotas?: number;
   n_cuota?: number;
-  split?: Split;
+  mi_parte?: number;
   link?: string;
   notas?: string;
-  // INGRESO specific
-  fuente?: string;
-  cotizacion?: number;
-  // TRANSFERENCIA specific
-  origen?: string;
-  destino?: string;
-  monto_salida?: number;
-  monto_entrada?: number;
-  comision?: number;
 }
 
 export interface TransactionResult {
@@ -94,21 +90,12 @@ export interface ConversationContext {
   datos: TransactionData;
 }
 
-// Personal Data Types
-export interface PersonalData {
-  nombre: string;
-  alias: string[];
-  cbu?: string;
-  cuit?: string;
-}
-
 // Config Types
 export interface CategoryMap {
   [macroCategory: string]: string[];
 }
 
 export interface ConfigData {
-  cuentas: string[];
   macroCategorias: string[];
   subcategorias: string[];
   categoriasMap: CategoryMap;
@@ -276,7 +263,7 @@ export type QuestionType = "select" | "text";
 
 export interface ClarificationQuestion {
   id: string;
-  field: keyof TransactionData | "tipo";
+  field: keyof TransactionData;
   questionText: string;
   questionType: QuestionType;
   options?: string[];

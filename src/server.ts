@@ -52,21 +52,8 @@ function isModifyingPending(result: TransactionResult, chatId: number): boolean 
   // If usa_contexto is true, it's likely a modification
   if (result.usa_contexto) return true;
 
-  // If it's the same type and has similar data, it's likely a modification
-  if (result.tipo === existingPending.tipo) {
-    // Check if critical fields match (like monto for GASTO)
-    if (result.tipo === "GASTO" && result.datos.monto === existingPending.datos.monto) {
-      return true;
-    }
-    if (result.tipo === "INGRESO" && result.datos.monto === existingPending.datos.monto) {
-      return true;
-    }
-    if (
-      result.tipo === "TRANSFERENCIA" &&
-      result.datos.monto_salida === existingPending.datos.monto_salida
-    ) {
-      return true;
-    }
+  if (result.tipo === "GASTO" && result.datos.monto === existingPending.datos.monto) {
+    return true;
   }
 
   return false;
@@ -147,7 +134,9 @@ app.post("/webhook", async (req: Request, res: Response) => {
     const chatId = message.chat.id;
 
     // Security check
-    if (chatId !== config.telegram.chatId) {
+    const allowedChatIds = [config.telegram.chatId];
+    if (config.telegram.partnerChatId) allowedChatIds.push(config.telegram.partnerChatId);
+    if (!allowedChatIds.includes(chatId)) {
       Logger.log(`Unauthorized access attempt from: ${chatId}`);
       await telegramClient.sendMessage(chatId, "⛔ No tenés permiso para usar este bot.");
       res.status(200).send("OK");

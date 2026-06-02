@@ -198,13 +198,10 @@ export class ResponseParser {
   ): ClarificationQuestion[] {
     const fieldQuestions: Record<string, { text: string; type: "select" | "text" }> = {
       monto: { text: "¿Cuál fue el monto?", type: "text" },
-      cuenta: { text: "¿Desde qué cuenta?", type: "select" },
       descripcion: { text: "¿Cuál es la descripción?", type: "text" },
       macro_categoria: { text: "¿En qué categoría?", type: "select" },
       subcategoria: { text: "¿Cuál es la subcategoría?", type: "select" },
-      origen: { text: "¿Desde qué cuenta?", type: "select" },
-      destino: { text: "¿A qué cuenta?", type: "select" },
-      fuente: { text: "¿Cuál es la fuente del ingreso?", type: "text" },
+      mi_parte: { text: "¿Qué porcentaje del gasto te corresponde? (0-100)", type: "text" },
     };
 
     return fields.slice(0, 3).map((field) => {

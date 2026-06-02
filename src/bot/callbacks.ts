@@ -62,13 +62,7 @@ export class CallbackHandlers {
       Validator.validateTransaction(storedData);
 
       // Write to sheet
-      if (storedData.tipo === "GASTO") {
-        await this.sheetsClient.writeGasto(storedData.datos);
-      } else if (storedData.tipo === "INGRESO") {
-        await this.sheetsClient.writeIngreso(storedData.datos);
-      } else if (storedData.tipo === "TRANSFERENCIA") {
-        await this.sheetsClient.writeTransferencia(storedData.datos);
-      }
+      await this.sheetsClient.writeGasto(storedData.datos);
     } catch (error) {
       Logger.error("ERROR writing to sheet from callback", error);
       await this.sendSaveError(chatId, messageId, callbackId, error);
@@ -201,13 +195,7 @@ export class CallbackHandlers {
 
   private generateResumen(data: TransactionResult): string {
     const d = data.datos;
-    if (data.tipo === "GASTO") {
-      return `📝 ${d.descripcion} - $${d.monto}\n🏷️ ${d.macro_categoria} → ${d.subcategoria}`;
-    } else if (data.tipo === "INGRESO") {
-      return `💰 ${d.fuente || d.descripcion} - $${d.monto}`;
-    } else {
-      return `🔄 ${d.origen} → ${d.destino}`;
-    }
+    return `📝 ${d.descripcion} - $${d.monto}\n🏷️ ${d.macro_categoria} → ${d.subcategoria}`;
   }
 
   private async sendSaveSuccess(
