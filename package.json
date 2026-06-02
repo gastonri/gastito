@@ -17,6 +17,7 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.{ts,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,json}\"",
+    "setup": "bun --env-file=.env scripts/setup-sheets.ts",
     "deploy": "bash scripts/deploy.sh deploy -a gastito",
     "deploy:logs": "bash scripts/deploy-logs.sh",
     "deploy:status": "bash scripts/deploy-status.sh"
