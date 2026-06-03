@@ -3,6 +3,7 @@ import { config } from "../config";
 import { Logger } from "../utils/logger";
 import { SheetsAPIError } from "../utils/errors";
 import { parseDate } from "../services/validator";
+import { extractTextWithoutEmoji, getErrorMessage } from "../utils/text";
 
 /**
  * Formats a Date object as DD/MM/YYYY string for Google Sheets
@@ -63,7 +64,7 @@ export class SheetsClient {
     } catch (error) {
       Logger.error("Error initializing Google Sheets client", error);
       throw new SheetsAPIError(
-        `Failed to initialize Sheets client: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to initialize Sheets client: ${getErrorMessage(error)}`
       );
     }
   }
@@ -106,7 +107,7 @@ export class SheetsClient {
     } catch (error) {
       Logger.error("Error reading config from Sheets", error);
       throw new SheetsAPIError(
-        `Failed to read config: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to read config: ${getErrorMessage(error)}`
       );
     }
   }
@@ -140,7 +141,7 @@ export class SheetsClient {
     } catch (error) {
       Logger.error("Error creating category map", error);
       throw new SheetsAPIError(
-        `Failed to create category map: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to create category map: ${getErrorMessage(error)}`
       );
     }
   }
@@ -157,14 +158,6 @@ export class SheetsClient {
       });
 
       const subcategorias = ((response.data.values as unknown[][]) || []).flat() as string[];
-
-      // Extract text without emoji helper
-      const extractTextWithoutEmoji = (text: string): string => {
-        if (!text) return "";
-        return text
-          .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, "")
-          .trim();
-      };
 
       // Exact match first
       for (const subcatConEmoji of subcategorias) {
@@ -294,7 +287,7 @@ export class SheetsClient {
     } catch (error) {
       Logger.error("Error writing GASTO to Sheets", error);
       throw new SheetsAPIError(
-        `Failed to write GASTO: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to write GASTO: ${getErrorMessage(error)}`
       );
     }
   }
@@ -473,7 +466,7 @@ export class SheetsClient {
     } catch (error) {
       Logger.error("Error writing AI provider to Sheets", error);
       throw new SheetsAPIError(
-        `Failed to write AI provider: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to write AI provider: ${getErrorMessage(error)}`
       );
     }
   }

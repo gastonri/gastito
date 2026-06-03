@@ -9,6 +9,7 @@ import { ConversationHandler } from "../services/conversation-handler";
 import { ClarificationBuilder } from "./clarification-builder";
 import { MessageBuilder } from "./message-builder";
 import { Logger } from "../utils/logger";
+import { getErrorMessage } from "../utils/text";
 
 export class CallbackHandlers {
   private conversationHandler: ConversationHandler | null = null;
@@ -82,7 +83,7 @@ export class CallbackHandlers {
       await sessionManager.deleteSession(chatId);
     } catch (error) {
       Logger.warn(
-        `Transaction was saved but session cleanup failed for chat ${chatId}: ${error instanceof Error ? error.message : String(error)}`
+        `Transaction was saved but session cleanup failed for chat ${chatId}: ${getErrorMessage(error)}`
       );
     }
 
@@ -198,29 +199,27 @@ export class CallbackHandlers {
     return `📝 ${d.descripcion} - $${d.monto}\n🏷️ ${d.macro_categoria} → ${d.subcategoria}`;
   }
 
+  private async sendOrEditMessage(chatId: number, messageId: number, text: string): Promise<void> {
+    try {
+      await this.telegramClient.editMessage(chatId, messageId, text);
+    } catch {
+      Logger.warn(`Could not edit message for chat ${chatId}, sending a new message instead`);
+      await this.telegramClient.sendMessage(chatId, text);
+    }
+  }
+
   private async sendSaveSuccess(
     chatId: number,
     messageId: number,
     callbackId: string,
     resumen: string
   ): Promise<void> {
-    const text = "✅ *¡Anotado perfectamente!*\n\n" + resumen;
-
-    try {
-      await this.telegramClient.editMessage(chatId, messageId, text);
-    } catch {
-      Logger.warn(
-        `Could not edit confirmation message for chat ${chatId}, sending a new message instead`
-      );
-      await this.telegramClient.sendMessage(chatId, text);
-    }
+    await this.sendOrEditMessage(chatId, messageId, "✅ *¡Anotado perfectamente!*\n\n" + resumen);
 
     try {
       await this.telegramClient.answerCallbackQuery(callbackId, "✓ Guardado");
     } catch (error) {
-      Logger.warn(
-        `Could not answer callback query after successful save: ${error instanceof Error ? error.message : String(error)}`
-      );
+      Logger.warn(`Could not answer callback query after successful save: ${getErrorMessage(error)}`);
     }
   }
 
@@ -230,25 +229,17 @@ export class CallbackHandlers {
     callbackId: string,
     error: unknown
   ): Promise<void> {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const text =
-      "❌ *Error al guardar*\n\n" + errorMessage + "\n\nRevisá los logs para más detalles.";
-
-    try {
-      await this.telegramClient.editMessage(chatId, messageId, text);
-    } catch {
-      Logger.warn(
-        `Could not edit error message for chat ${chatId}, sending a new message instead`
-      );
-      await this.telegramClient.sendMessage(chatId, text);
-    }
+    const errorMessage = getErrorMessage(error);
+    await this.sendOrEditMessage(
+      chatId,
+      messageId,
+      "❌ *Error al guardar*\n\n" + errorMessage + "\n\nRevisá los logs para más detalles."
+    );
 
     try {
       await this.telegramClient.answerCallbackQuery(callbackId, "Error: " + errorMessage);
     } catch (callbackError) {
-      Logger.warn(
-        `Could not answer callback query after save error: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}`
-      );
+      Logger.warn(`Could not answer callback query after save error: ${getErrorMessage(callbackError)}`);
     }
   }
 }

@@ -115,16 +115,7 @@ export class Validator {
 }
 
 import { MONEDA_OPTIONS } from "../types";
-
-/**
- * Helper to extract text without emoji
- */
-function extractTextWithoutEmoji(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, "")
-    .trim();
-}
+import { extractTextWithoutEmoji } from "../utils/text";
 
 /**
  * Maps a 1-indexed number to a value from an options array.
