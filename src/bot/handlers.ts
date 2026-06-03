@@ -38,12 +38,12 @@ export class MessageHandlers {
     const operacionPendiente = pendingOperations.getLastPendingOperation(chatId);
 
     // Get config
-    const config = await this.sheetsClient.getConfig();
+    const sheetsConfig = await this.sheetsClient.getConfig();
 
     // Build prompt (pass both confirmed context and pending operation)
     const prompt = PromptBuilder.buildTextPrompt(
       text,
-      config.categoriasMap,
+      sheetsConfig.categoriasMap,
       contextoPrevio,
       operacionPendiente
     );
@@ -134,7 +134,7 @@ export class MessageHandlers {
           const inferredSubcategory = this.tryInferSubcategory(
             text,
             result.datos.macro_categoria,
-            config.categoriasMap
+            sheetsConfig.categoriasMap
           );
           if (inferredSubcategory) {
             Logger.log(
@@ -153,7 +153,7 @@ export class MessageHandlers {
     }
 
     // Map numbered AI response fields to actual string values
-    const mappedResult = mapTransactionIndices(result, config);
+    const mappedResult = mapTransactionIndices(result, sheetsConfig);
     mappedResult.datos.persona = config.telegram.userNames[String(message.chat.id)] || message.from?.first_name || "Usuario";
 
     return mappedResult;
@@ -167,12 +167,12 @@ export class MessageHandlers {
     const imageData = await this.imageProcessor.downloadImage(photo.file_id);
 
     // Get config
-    const config = await this.sheetsClient.getConfig();
+    const sheetsConfig = await this.sheetsClient.getConfig();
 
     // Build prompt
     const prompt = PromptBuilder.buildVisionPrompt(
       caption,
-      config.categoriasMap
+      sheetsConfig.categoriasMap
     );
 
     // Get user's preferred AI provider and get the client
@@ -221,7 +221,7 @@ export class MessageHandlers {
     }
 
     // Map numbered AI response fields to actual string values
-    const mappedResult = mapTransactionIndices(result, config);
+    const mappedResult = mapTransactionIndices(result, sheetsConfig);
     mappedResult.datos.persona = config.telegram.userNames[String(message.chat.id)] || message.from?.first_name || "Usuario";
 
     return mappedResult;
@@ -259,11 +259,11 @@ export class MessageHandlers {
     // Process transcribed text as if it were a text message
     const contextoPrevio = contextManager.getContext(chatId);
     const operacionPendiente = pendingOperations.getLastPendingOperation(chatId);
-    const config = await this.sheetsClient.getConfig();
+    const sheetsConfig = await this.sheetsClient.getConfig();
 
     const prompt = PromptBuilder.buildTextPrompt(
       textoTranscrito,
-      config.categoriasMap,
+      sheetsConfig.categoriasMap,
       contextoPrevio,
       operacionPendiente
     );
@@ -305,7 +305,7 @@ export class MessageHandlers {
           const inferredSubcategory = this.tryInferSubcategory(
             textoTranscrito,
             result.datos.macro_categoria,
-            config.categoriasMap
+            sheetsConfig.categoriasMap
           );
           if (inferredSubcategory) {
             Logger.log(
@@ -318,7 +318,7 @@ export class MessageHandlers {
     }
 
     // Map numbered AI response fields to actual string values
-    const mappedResult = mapTransactionIndices(result, config);
+    const mappedResult = mapTransactionIndices(result, sheetsConfig);
     mappedResult.datos.persona = config.telegram.userNames[String(message.chat.id)] || message.from?.first_name || "Usuario";
 
     return mappedResult;
@@ -336,13 +336,13 @@ export class MessageHandlers {
     partialTransaction?: Partial<TransactionResult>
   ): Promise<AIResponse> {
     // Get config
-    const config = await this.sheetsClient.getConfig();
+    const sheetsConfig = await this.sheetsClient.getConfig();
 
     // Build conversational prompt
     const prompt = PromptBuilder.buildConversationalPrompt(
       conversationHistory,
       text,
-      config.categoriasMap,
+      sheetsConfig.categoriasMap,
       pendingQuestions,
       partialTransaction
     );
@@ -360,12 +360,12 @@ export class MessageHandlers {
 
     // If it's a transaction response, map indices to actual values
     if (parsed.responseType === "transaction") {
-      parsed.transaction = mapTransactionIndices(parsed.transaction, config);
+      parsed.transaction = mapTransactionIndices(parsed.transaction, sheetsConfig);
     }
 
     // If it's a clarification, inject the actual account/category names into options
     if (parsed.responseType === "clarification" && parsed.questions) {
-      parsed.questions = this.enrichQuestionOptions(parsed.questions, config);
+      parsed.questions = this.enrichQuestionOptions(parsed.questions, sheetsConfig);
     }
 
     return parsed;
