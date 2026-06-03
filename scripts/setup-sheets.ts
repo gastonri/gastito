@@ -115,6 +115,9 @@ const GASTOS_HEADERS = [
   "mi_parte_%",
   "link",
   "notas",
+  "año",
+  "mes",
+  "dia",
 ];
 
 const HEADER_COLOR = { red: 0.18, green: 0.31, blue: 0.47 }; // #2D4F77

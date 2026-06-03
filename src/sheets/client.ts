@@ -268,10 +268,10 @@ export class SheetsClient {
         },
       });
 
-      // Write J: imp_mensual formula, K: mi_parte_%, L: link, M: notas
+      // Write J:P (imp_mensual through dia)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!J${newRow}:M${newRow}`,
+        range: `${sheetName}!J${newRow}:P${newRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [[
@@ -279,6 +279,9 @@ export class SheetsClient {
             String(miParte),
             (data.link || "").trim(),
             (data.notas || "").trim(),
+            fecha.getFullYear(),
+            fecha.getMonth() + 1,
+            fecha.getDate(),
           ]],
         },
       });
