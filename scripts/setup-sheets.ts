@@ -17,7 +17,6 @@ const CATEGORIES: Record<string, string[]> = {
     "Kiosco",
   ],
   VIVIENDA: [
-    "Alquiler",
     "Servicios",
     "Mantenimiento/Reparaciones",
     "Mobiliario/Decoración",

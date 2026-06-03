@@ -33,7 +33,7 @@ El script `bun run setup` crea automáticamente las hojas necesarias.
 | Macro | Subcategorías |
 |---|---|
 | ALIMENTACIÓN | Supermercado, Restaurante, Café y Snacks, Delivery, Verdulería, Carnicería y Pollería, Kiosco |
-| VIVIENDA | Alquiler, Servicios, Mantenimiento/Reparaciones, Mobiliario/Decoración |
+| VIVIENDA | Servicios, Mantenimiento/Reparaciones, Mobiliario/Decoración |
 | TRANSPORTE | Combustible, Transporte público, Taxi/Uber, Viajes, Mantenimiento vehículo, Estacionamiento, Peajes |
 | SALUD | Farmacia, Obra Social/Prepaga, Consultas médicas, Odontología, Deporte/Gym |
 | EDUCACIÓN | Cursos/Capacitaciones, Libros/Materiales, Cuota colegio/universidad, Idiomas |
