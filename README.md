@@ -32,14 +32,18 @@ El script `bun run setup` crea automáticamente las hojas necesarias.
 
 | Macro | Subcategorías |
 |---|---|
-| ALIMENTACIÓN | Supermercado, Restaurante, Café, Delivery, Verdulería, Carnicería |
-| VIVIENDA | Alquiler, Servicios, Limpieza/Hogar |
-| TRANSPORTE | Combustible, Transporte público, Taxi/Uber, Viajes |
-| SALUD | Farmacia, Médico, Odontología |
-| OCIO | Entretenimiento, Deporte/Gym, Libros |
-| ROPA | Ropa, Calzado, Accesorios |
-| TECNOLOGÍA | Electrónica, Suscripciones, Accesorios tech |
-| EDUCACIÓN | Cursos, Instituto |
+| ALIMENTACIÓN | Supermercado, Restaurante, Café y Snacks, Delivery, Verdulería, Carnicería y Pollería, Kiosco |
+| VIVIENDA | Alquiler, Servicios, Mantenimiento/Reparaciones, Mobiliario/Decoración |
+| TRANSPORTE | Combustible, Transporte público, Taxi/Uber, Viajes, Mantenimiento vehículo, Estacionamiento, Peajes |
+| SALUD | Farmacia, Obra Social/Prepaga, Consultas médicas, Odontología, Deporte/Gym |
+| EDUCACIÓN | Cursos/Capacitaciones, Libros/Materiales, Cuota colegio/universidad, Idiomas |
+| TECNOLOGÍA | Suscripciones digitales, Software/Licencias, Hardware/Electrónica, Telefonía/Celular |
+| ENTRETENIMIENTO | Cine/Teatro/Shows, Hobbies, Viajes/Turismo, Salidas/Recreación |
+| INDUMENTARIA | Ropa, Calzado, Accesorios, Peluquería/Estética |
+| HOGAR | Limpieza/Productos, Mercadería no alimenticia, Jardinería |
+| FINANZAS | Impuestos, Seguros, Comisiones bancarias, Inversiones, Asesoría financiera |
+| REGALOS Y DONACIONES | Regalos, Donaciones, Eventos/Celebraciones |
+| MASCOTAS | Veterinario, Alimento, Accesorios |
 
 ## Prerequisites
 
