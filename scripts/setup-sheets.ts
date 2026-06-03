@@ -186,11 +186,7 @@ function headerFormatRequest(
 // ─── Setup GASTOS ─────────────────────────────────────────────────────────────
 
 async function setupGastos(sheets: sheets_v4.Sheets, sheetId: number) {
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: SPREADSHEET_ID,
-    range: "GASTOS",
-  });
-
+  // Solo actualiza la fila de headers — no borra datos existentes
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: "GASTOS!A1",
