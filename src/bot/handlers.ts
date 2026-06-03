@@ -29,7 +29,7 @@ export class MessageHandlers {
     private audioProcessor: AudioProcessor
   ) {}
 
-  async handleTextMessage(message: TelegramMessage): Promise<TransactionResult> {
+  async handleTextMessage(message: TelegramMessage): Promise<TransactionResult[]> {
     const text = message.text!;
     const chatId = message.chat.id;
 
@@ -48,21 +48,20 @@ export class MessageHandlers {
     const aiClient = this.aiClientManager.getClient(userProvider);
     const response = await aiClient.generateContent(prompt);
 
-    let result = this.parseAIResponse(response);
+    const results = this.parseAIResponse(response);
 
-    if (result.usa_contexto === undefined) {
-      result.usa_contexto = contextoPrevio !== null;
-    }
-
-    result = this.applyGastoDefaults(result, text, sheetsConfig);
-
-    const mappedResult = mapTransactionIndices(result, sheetsConfig);
-    mappedResult.datos.persona = this.resolvePersona(message);
-
-    return mappedResult;
+    return results.map((result) => {
+      if (result.usa_contexto === undefined) {
+        result.usa_contexto = contextoPrevio !== null;
+      }
+      result = this.applyGastoDefaults(result, text, sheetsConfig);
+      const mapped = mapTransactionIndices(result, sheetsConfig);
+      mapped.datos.persona = this.resolvePersona(message);
+      return mapped;
+    });
   }
 
-  async handleImageMessage(message: TelegramMessage): Promise<TransactionResult> {
+  async handleImageMessage(message: TelegramMessage): Promise<TransactionResult[]> {
     const photo = message.photo![message.photo!.length - 1];
     const caption = message.caption || "";
 
@@ -86,22 +85,22 @@ export class MessageHandlers {
       throw new Error(`Error al analizar imagen con IA: ${getErrorMessage(visionError)}`);
     }
 
-    const result = this.parseAIResponse(response);
+    const results = this.parseAIResponse(response);
 
-    if (result.confianza === "BAJA" || (result.campos_faltantes && result.campos_faltantes.length > 0)) {
-      result.alerta = `⚠️ Confianza ${result.confianza}. Campos dudosos: ${result.campos_faltantes?.join(", ") || ""}`;
-    }
-    if (result.razonamiento) {
-      result.alerta = (result.alerta || "") + `\n\n💡 ${result.razonamiento}`;
-    }
-
-    const mappedResult = mapTransactionIndices(result, sheetsConfig);
-    mappedResult.datos.persona = this.resolvePersona(message);
-
-    return mappedResult;
+    return results.map((result) => {
+      if (result.confianza === "BAJA" || (result.campos_faltantes && result.campos_faltantes.length > 0)) {
+        result.alerta = `⚠️ Confianza ${result.confianza}. Campos dudosos: ${result.campos_faltantes?.join(", ") || ""}`;
+      }
+      if (result.razonamiento) {
+        result.alerta = (result.alerta || "") + `\n\n💡 ${result.razonamiento}`;
+      }
+      const mapped = mapTransactionIndices(result, sheetsConfig);
+      mapped.datos.persona = this.resolvePersona(message);
+      return mapped;
+    });
   }
 
-  async handleAudioMessage(message: TelegramMessage): Promise<TransactionResult> {
+  async handleAudioMessage(message: TelegramMessage): Promise<TransactionResult[]> {
     const chatId = message.chat.id;
     const audioFile = message.voice || message.audio!;
 
@@ -138,18 +137,17 @@ export class MessageHandlers {
     );
 
     const response = await aiClient.generateContent(prompt);
-    let result = this.parseAIResponse(response);
+    const results = this.parseAIResponse(response);
 
-    if (result.usa_contexto === undefined) {
-      result.usa_contexto = contextoPrevio !== null;
-    }
-
-    result = this.applyGastoDefaults(result, textoTranscrito, sheetsConfig);
-
-    const mappedResult = mapTransactionIndices(result, sheetsConfig);
-    mappedResult.datos.persona = this.resolvePersona(message);
-
-    return mappedResult;
+    return results.map((result) => {
+      if (result.usa_contexto === undefined) {
+        result.usa_contexto = contextoPrevio !== null;
+      }
+      result = this.applyGastoDefaults(result, textoTranscrito, sheetsConfig);
+      const mapped = mapTransactionIndices(result, sheetsConfig);
+      mapped.datos.persona = this.resolvePersona(message);
+      return mapped;
+    });
   }
 
   async handleConversationalMessage(
@@ -188,15 +186,16 @@ export class MessageHandlers {
     return parsed;
   }
 
-  private parseAIResponse(response: string): TransactionResult {
+  private parseAIResponse(response: string): TransactionResult[] {
     let cleaned = response.replace(/```json|```/g, "").trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) cleaned = jsonMatch[0];
 
     Logger.log(`Cleaned response for parsing (${cleaned.length} chars): ${cleaned.substring(0, 200)}...`);
 
+    let parsed: unknown;
     try {
-      return JSON.parse(cleaned) as TransactionResult;
+      parsed = JSON.parse(cleaned);
     } catch (parseError) {
       Logger.error("Error parsing JSON", parseError);
       Logger.error(`Full response: ${response}`);
@@ -204,16 +203,33 @@ export class MessageHandlers {
       const extractedJson = response.match(/\{[\s\S]{20,}\}/);
       if (extractedJson) {
         try {
-          const result = JSON.parse(extractedJson[0]) as TransactionResult;
+          parsed = JSON.parse(extractedJson[0]);
           Logger.log("Successfully extracted JSON from response");
-          return result;
         } catch { /* fall through */ }
       }
 
-      throw new Error(
-        `Error al procesar respuesta de IA. La respuesta no es JSON válido: ${getErrorMessage(parseError)}\n\nRespuesta recibida: ${cleaned.substring(0, 500)}`
-      );
+      if (!parsed) {
+        throw new Error(
+          `Error al procesar respuesta de IA. La respuesta no es JSON válido: ${getErrorMessage(parseError)}\n\nRespuesta recibida: ${cleaned.substring(0, 500)}`
+        );
+      }
     }
+
+    const obj = parsed as Record<string, unknown>;
+
+    // New format: { gastos: [...] }
+    if (Array.isArray(obj.gastos) && obj.gastos.length > 0) {
+      Logger.log(`Parsed ${obj.gastos.length} gasto(s) from response`);
+      return obj.gastos as TransactionResult[];
+    }
+
+    // Fallback: old format { tipo, datos }
+    if (obj.tipo && obj.datos) {
+      Logger.log("Parsed response in legacy single-gasto format");
+      return [parsed as TransactionResult];
+    }
+
+    throw new Error(`Formato de respuesta inesperado: ${cleaned.substring(0, 200)}`);
   }
 
   private applyGastoDefaults(

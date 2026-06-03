@@ -3,17 +3,17 @@ import { Logger } from "../utils/logger";
 import { randomUUID } from "crypto";
 
 interface StoredOperation {
-  data: TransactionResult;
+  data: TransactionResult[];
   expiresAt: number;
-  chatId?: number; // Track which chat this operation belongs to
+  chatId?: number;
 }
 
 class PendingOperationsManager {
   private storage: Map<string, StoredOperation> = new Map();
-  private lastPendingByChat: Map<number, string> = new Map(); // chatId -> operationId
+  private lastPendingByChat: Map<number, string> = new Map();
   private readonly TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-  createOperation(data: TransactionResult, chatId?: number): string {
+  createOperation(data: TransactionResult[], chatId?: number): string {
     const operationId = randomUUID();
     this.storage.set(operationId, {
       data,
@@ -21,23 +21,19 @@ class PendingOperationsManager {
       chatId,
     });
 
-    // Track the last pending operation for this chat
     if (chatId) {
       this.lastPendingByChat.set(chatId, operationId);
     }
 
-    Logger.log(`Created pending operation: ${operationId}${chatId ? ` for chat ${chatId}` : ""}`);
+    Logger.log(`Created pending operation: ${operationId} (${data.length} item(s))${chatId ? ` for chat ${chatId}` : ""}`);
     return operationId;
   }
 
-  getOperation(operationId: string): TransactionResult | null {
+  getOperation(operationId: string): TransactionResult[] | null {
     const stored = this.storage.get(operationId);
 
-    if (!stored) {
-      return null;
-    }
+    if (!stored) return null;
 
-    // Check if expired
     if (Date.now() > stored.expiresAt) {
       this.storage.delete(operationId);
       return null;
@@ -50,7 +46,6 @@ class PendingOperationsManager {
     const operation = this.storage.get(operationId);
     this.storage.delete(operationId);
 
-    // Remove from chat tracking if it was the last pending
     if (operation?.chatId) {
       const lastOpId = this.lastPendingByChat.get(operation.chatId);
       if (lastOpId === operationId) {
@@ -61,37 +56,31 @@ class PendingOperationsManager {
     Logger.log(`Deleted pending operation: ${operationId}`);
   }
 
+  // Returns the single pending item only for single-item batches (used for modification flow)
   getLastPendingOperation(chatId: number): TransactionResult | null {
     const operationId = this.lastPendingByChat.get(chatId);
-    if (!operationId) {
-      return null;
-    }
+    if (!operationId) return null;
 
-    return this.getOperation(operationId);
+    const batch = this.getOperation(operationId);
+    return batch?.length === 1 ? batch[0] : null;
   }
 
   updateLastPendingOperation(chatId: number, newData: TransactionResult): string | null {
     const operationId = this.lastPendingByChat.get(chatId);
-    if (!operationId) {
-      // No existing pending operation, create a new one
-      return this.createOperation(newData, chatId);
-    }
+    if (!operationId) return this.createOperation([newData], chatId);
 
-    // Update existing operation
     const existing = this.storage.get(operationId);
     if (existing && Date.now() < existing.expiresAt) {
-      existing.data = newData;
-      existing.expiresAt = Date.now() + this.TTL_MS; // Reset expiration
+      existing.data = [newData];
+      existing.expiresAt = Date.now() + this.TTL_MS;
       Logger.log(`Updated pending operation: ${operationId} for chat ${chatId}`);
       return operationId;
     } else {
-      // Operation expired, create new one
       this.lastPendingByChat.delete(chatId);
-      return this.createOperation(newData, chatId);
+      return this.createOperation([newData], chatId);
     }
   }
 
-  // Cleanup expired operations periodically
   cleanup(): void {
     const now = Date.now();
     let cleaned = 0;
@@ -107,13 +96,6 @@ class PendingOperationsManager {
   }
 }
 
-// Singleton instance
 export const pendingOperations = new PendingOperationsManager();
 
-// Run cleanup every 10 minutes
-setInterval(
-  () => {
-    pendingOperations.cleanup();
-  },
-  10 * 60 * 1000
-);
+setInterval(() => { pendingOperations.cleanup(); }, 10 * 60 * 1000);

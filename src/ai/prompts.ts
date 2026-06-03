@@ -32,7 +32,7 @@ export class PromptBuilder {
     const descripcionCategorias = buildCategoriasText(categoriasMap);
     const monedaNumerada = formatNumberedOptions(MONEDA_OPTIONS);
 
-    return `Analizá esta imagen de comprobante y extraé los datos del gasto.
+    return `Analizá esta imagen de comprobante y extraé todos los gastos. Puede haber uno o varios ítems.
 ${caption ? `Contexto del usuario: "${caption}"` : ""}
 Fecha de hoy (solo para referencia): ${new Date().toLocaleDateString("es-AR")}
 
@@ -44,52 +44,59 @@ ${descripcionCategorias}
 1. macro_categoria, subcategoria, moneda DEBEN ser NÚMEROS ENTEROS. NUNCA uses null, strings, ni texto. Si no estás seguro, usá 1 como default.
 2. ⚠️ FECHA: Usá SIEMPRE la fecha del comprobante, NO la fecha de hoy.
 3. mi_parte: número entre 0 y 100 que representa el porcentaje del gasto que corresponde al usuario. Default 100 si no se menciona división.
+4. Si el comprobante tiene múltiples ítems con precios distintos, creá un objeto por cada ítem. Si tiene solo un total, creá uno solo con el total.
 
-📋 EJEMPLO DE RESPUESTA CORRECTA:
+📋 EJEMPLO (ticket con total único):
 {
-  "tipo": "GASTO",
-  "datos": {
-    "fecha": "07/01/2026",
-    "descripcion": "Supermercado Carrefour",
-    "macro_categoria": 1,
-    "subcategoria": 1,
-    "monto": 15000,
-    "moneda": 1,
-    "cuotas": 1,
-    "n_cuota": 1,
-    "mi_parte": 100,
-    "notas": "Ticket #12345"
-  },
-  "confianza": "ALTA",
-  "campos_faltantes": [],
-  "razonamiento": "Compra en supermercado"
+  "gastos": [
+    {
+      "tipo": "GASTO",
+      "datos": { "fecha": "07/01/2026", "descripcion": "Supermercado Carrefour", "macro_categoria": 1, "subcategoria": 1, "monto": 15000, "moneda": 1, "cuotas": 1, "n_cuota": 1, "mi_parte": 100, "notas": "Ticket #12345" },
+      "confianza": "ALTA",
+      "campos_faltantes": [],
+      "razonamiento": "Compra en supermercado"
+    }
+  ]
+}
+
+📋 EJEMPLO (factura con ítems separados):
+{
+  "gastos": [
+    { "tipo": "GASTO", "datos": { "fecha": "07/01/2026", "descripcion": "Café con leche", "macro_categoria": 1, "subcategoria": 3, "monto": 1800, "moneda": 1, "cuotas": 1, "n_cuota": 1, "mi_parte": 100, "notas": "" }, "confianza": "ALTA", "campos_faltantes": [] },
+    { "tipo": "GASTO", "datos": { "fecha": "07/01/2026", "descripcion": "Medialunas x3", "macro_categoria": 1, "subcategoria": 3, "monto": 1200, "moneda": 1, "cuotas": 1, "n_cuota": 1, "mi_parte": 100, "notas": "" }, "confianza": "ALTA", "campos_faltantes": [] }
+  ]
 }
 
 Respondé SOLO con JSON válido (sin markdown):
 {
-  "tipo": "GASTO",
-  "datos": {
-    "fecha": "DD/MM/YYYY (del comprobante, NO de hoy)",
-    "descripcion": "texto",
-    "macro_categoria": INTEGER,
-    "subcategoria": INTEGER,
-    "monto": NUMBER,
-    "moneda": INTEGER (1=ARS, 2=USD),
-    "cuotas": INTEGER,
-    "n_cuota": INTEGER,
-    "mi_parte": NUMBER (0-100, default 100),
-    "notas": "texto"
-  },
-  "confianza": "ALTA" | "MEDIA" | "BAJA",
-  "campos_faltantes": [],
-  "razonamiento": "texto corto"
+  "gastos": [
+    {
+      "tipo": "GASTO",
+      "datos": {
+        "fecha": "DD/MM/YYYY (del comprobante, NO de hoy)",
+        "descripcion": "texto",
+        "macro_categoria": INTEGER,
+        "subcategoria": INTEGER,
+        "monto": NUMBER,
+        "moneda": INTEGER (1=ARS, 2=USD),
+        "cuotas": INTEGER,
+        "n_cuota": INTEGER,
+        "mi_parte": NUMBER (0-100, default 100),
+        "notas": "texto"
+      },
+      "confianza": "ALTA" | "MEDIA" | "BAJA",
+      "campos_faltantes": [],
+      "razonamiento": "texto corto"
+    }
+  ]
 }
 
 REGLAS:
 - Fecha: SIEMPRE la del comprobante, NUNCA usar fecha de hoy
 - Monto: sin separadores de miles, punto decimal (1234.56)
 - Si no hay cuotas: cuotas=1, n_cuota=1
-- mi_parte: si el usuario menciona división (ej: "50/50", "compartido", "mitad"), ajustá el porcentaje`;
+- mi_parte: si el usuario menciona división (ej: "50/50", "compartido", "mitad"), ajustá el porcentaje
+- Si hay múltiples ítems con precios, generá un objeto por cada uno`;
   }
 
   static buildTextPrompt(
@@ -130,7 +137,7 @@ REGLAS:
         `Si el mensaje es claramente un NUEVO gasto, ignorá el contexto.`;
     }
 
-    return `Extraé datos de un gasto del mensaje. Respondé SOLO con JSON válido.
+    return `Extraé todos los gastos del mensaje. Puede haber uno o varios. Respondé SOLO con JSON válido.
 
 Usuario dice: "${text}"
 Fecha de hoy (solo para referencia): ${new Date().toLocaleDateString("es-AR")}
@@ -144,47 +151,54 @@ ${contextoTexto}
 1. macro_categoria, subcategoria, moneda DEBEN ser NÚMEROS ENTEROS.
 2. ⚠️ FECHA: Si el usuario menciona "hoy", "ayer", calculá la fecha real. Si no menciona fecha, dejá el campo vacío "".
 3. mi_parte: número 0-100 representando el porcentaje del gasto del usuario. Default 100.
+4. Si el mensaje menciona múltiples ítems o precios, creá un objeto por cada gasto.
 
-📋 EJEMPLO:
+📋 EJEMPLO (un gasto):
 {
-  "tipo": "GASTO",
-  "datos": {
-    "fecha": "10/01/2026",
-    "descripcion": "Almuerzo",
-    "macro_categoria": 1,
-    "subcategoria": 2,
-    "monto": 5000,
-    "moneda": 1,
-    "cuotas": 1,
-    "n_cuota": 1,
-    "mi_parte": 50,
-    "notas": ""
-  },
-  "usa_contexto": false
+  "gastos": [
+    {
+      "tipo": "GASTO",
+      "datos": { "fecha": "10/01/2026", "descripcion": "Almuerzo", "macro_categoria": 1, "subcategoria": 2, "monto": 5000, "moneda": 1, "cuotas": 1, "n_cuota": 1, "mi_parte": 50, "notas": "" },
+      "usa_contexto": false
+    }
+  ]
+}
+
+📋 EJEMPLO (múltiples gastos):
+{
+  "gastos": [
+    { "tipo": "GASTO", "datos": { "descripcion": "Café", "macro_categoria": 1, "subcategoria": 3, "monto": 1500, "moneda": 1, "cuotas": 1, "n_cuota": 1, "mi_parte": 100, "notas": "" } },
+    { "tipo": "GASTO", "datos": { "descripcion": "Medialunas", "macro_categoria": 1, "subcategoria": 3, "monto": 800, "moneda": 1, "cuotas": 1, "n_cuota": 1, "mi_parte": 100, "notas": "" } }
+  ]
 }
 
 Respondé SOLO con JSON (sin markdown):
 {
-  "tipo": "GASTO",
-  "datos": {
-    "fecha": "DD/MM/YYYY" o "",
-    "descripcion": "texto",
-    "macro_categoria": INTEGER,
-    "subcategoria": INTEGER,
-    "monto": NUMBER,
-    "moneda": INTEGER (1=ARS, 2=USD),
-    "cuotas": INTEGER,
-    "n_cuota": INTEGER,
-    "mi_parte": NUMBER (0-100),
-    "notas": ""
-  },
-  "usa_contexto": true/false
+  "gastos": [
+    {
+      "tipo": "GASTO",
+      "datos": {
+        "fecha": "DD/MM/YYYY" o "",
+        "descripcion": "texto",
+        "macro_categoria": INTEGER,
+        "subcategoria": INTEGER,
+        "monto": NUMBER,
+        "moneda": INTEGER (1=ARS, 2=USD),
+        "cuotas": INTEGER,
+        "n_cuota": INTEGER,
+        "mi_parte": NUMBER (0-100),
+        "notas": ""
+      },
+      "usa_contexto": true/false
+    }
+  ]
 }
 
 REGLAS:
 - Si hay OPERACIÓN PENDIENTE, el usuario la está modificando. Mantené campos no mencionados.
 - Fecha: "hoy" → fecha de hoy, "ayer" → resta 1 día, sin fecha → ""
-- mi_parte: si menciona "compartido", "50/50", "mitad" → 50. Si menciona un porcentaje → usalo. Default 100.`;
+- mi_parte: si menciona "compartido", "50/50", "mitad" → 50. Si menciona un porcentaje → usalo. Default 100.
+- Si el mensaje tiene múltiples precios/ítems, generá un objeto por cada uno en el array gastos.`;
   }
 
   static buildConversationalPrompt(

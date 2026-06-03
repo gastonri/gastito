@@ -44,17 +44,15 @@ const conversationHandler = new ConversationHandler(messageHandlers);
 // Wire up conversation handler to callback handlers
 callbackHandlers.setConversationHandler(conversationHandler);
 
-// Helper to check if result is modifying pending operation
-function isModifyingPending(result: TransactionResult, chatId: number): boolean {
+// Helper to check if a single-result response is modifying an existing pending operation
+function isModifyingPending(results: TransactionResult[], chatId: number): boolean {
+  if (results.length !== 1) return false;
   const existingPending = pendingOperations.getLastPendingOperation(chatId);
   if (!existingPending) return false;
 
-  // If usa_contexto is true, it's likely a modification
+  const result = results[0];
   if (result.usa_contexto) return true;
-
-  if (result.tipo === "GASTO" && result.datos.monto === existingPending.datos.monto) {
-    return true;
-  }
+  if (result.tipo === "GASTO" && result.datos.monto === existingPending.datos.monto) return true;
 
   return false;
 }
@@ -228,108 +226,60 @@ app.post("/webhook", async (req: Request, res: Response) => {
       }
     }
 
-    let result: TransactionResult | undefined;
+    let results: TransactionResult[] | undefined;
     let loadingMessageId: number | null = null;
 
     try {
       if (message.photo) {
-        // Handle image message
-        loadingMessageId = await telegramClient.sendMessage(
-          chatId,
-          "📸 Paso 1/5: Iniciando análisis..."
-        );
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          "📸 Paso 2/5: Descargando imagen de Telegram..."
-        );
+        loadingMessageId = await telegramClient.sendMessage(chatId, "📸 Paso 1/5: Iniciando análisis...");
+        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 2/5: Descargando imagen de Telegram...");
 
-        result = await messageHandlers.handleImageMessage(message);
+        results = await messageHandlers.handleImageMessage(message);
 
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          "📸 Paso 3/5: Preparando contexto..."
-        );
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          "📸 Paso 4/5: Analizando con IA (esto puede tardar)..."
-        );
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          "📸 Paso 5/5: Procesando resultados..."
-        );
+        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 3/5: Preparando contexto...");
+        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 4/5: Analizando con IA (esto puede tardar)...");
+        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 5/5: Procesando resultados...");
       } else if (message.voice || message.audio) {
-        // Handle audio message
-        loadingMessageId = await telegramClient.sendMessage(
-          chatId,
-          "🎤 Paso 1/4: Transcribiendo audio..."
-        );
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          "🎤 Paso 2/4: Descargando audio de Telegram..."
-        );
+        loadingMessageId = await telegramClient.sendMessage(chatId, "🎤 Paso 1/4: Transcribiendo audio...");
+        await telegramClient.editMessage(chatId, loadingMessageId!, "🎤 Paso 2/4: Descargando audio de Telegram...");
 
         const audioFile = message.voice || message.audio!;
         const audioData = await audioProcessor.downloadAudio(audioFile.file_id);
 
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          "🎤 Paso 3/4: Transcribiendo con IA (esto puede tardar)..."
-        );
+        await telegramClient.editMessage(chatId, loadingMessageId!, "🎤 Paso 3/4: Transcribiendo con IA (esto puede tardar)...");
         const userProvider = await userPreferences.getAIProvider(chatId);
         const aiClient = aiClientManager.getClient(userProvider);
         const textoTranscrito = await aiClient.transcribeAudio(audioData);
 
         if (!textoTranscrito || textoTranscrito.trim() === "") {
-          throw new Error(
-            "No se pudo transcribir el audio. Asegurate de que el audio sea claro y esté en español."
-          );
+          throw new Error("No se pudo transcribir el audio. Asegurate de que el audio sea claro y esté en español.");
         }
 
-        // Show transcription
-        await telegramClient.editMessage(
-          chatId,
-          loadingMessageId!,
-          `🎤 *Transcripción:*\n\n"${textoTranscrito}"\n\nProcesando...`
-        );
-
-        // Process transcribed text
-        result = await messageHandlers.handleTextMessage({ ...message, text: textoTranscrito });
+        await telegramClient.editMessage(chatId, loadingMessageId!, `🎤 *Transcripción:*\n\n"${textoTranscrito}"\n\nProcesando...`);
+        results = await messageHandlers.handleTextMessage({ ...message, text: textoTranscrito });
       } else if (message.text) {
-        // Handle text message
         loadingMessageId = await telegramClient.sendMessage(chatId, "💬 Procesando...");
-        result = await messageHandlers.handleTextMessage(message);
+        results = await messageHandlers.handleTextMessage(message);
       } else {
-        await telegramClient.sendMessage(
-          chatId,
-          "❌ Solo puedo procesar texto, imágenes de comprobantes o audios."
-        );
+        await telegramClient.sendMessage(chatId, "❌ Solo puedo procesar texto, imágenes de comprobantes o audios.");
         res.status(200).send("OK");
         return;
       }
 
-      // Check if there's a pending operation and if this is a modification
-      if (!result) {
+      if (!results || results.length === 0) {
         throw new Error("No result from message handler");
       }
-      const isModification = isModifyingPending(result, chatId);
+
+      const isModification = isModifyingPending(results, chatId);
       let operationId: string;
 
       if (isModification) {
-        // This is a modification of the pending operation, update it
-        const updatedId = pendingOperations.updateLastPendingOperation(chatId, result);
-        operationId = updatedId || pendingOperations.createOperation(result, chatId);
+        const updatedId = pendingOperations.updateLastPendingOperation(chatId, results[0]);
+        operationId = updatedId || pendingOperations.createOperation(results, chatId);
       } else {
-        // New transaction, create new pending operation
-        operationId = pendingOperations.createOperation(result, chatId);
+        operationId = pendingOperations.createOperation(results, chatId);
       }
 
-      // Create keyboard
       const keyboard = {
         inline_keyboard: [
           [
@@ -339,8 +289,10 @@ app.post("/webhook", async (req: Request, res: Response) => {
         ],
       };
 
-      // Send confirmation message
-      const confirmationMessage = MessageBuilder.buildConfirmationMessage(result);
+      const confirmationMessage = results.length === 1
+        ? MessageBuilder.buildConfirmationMessage(results[0])
+        : MessageBuilder.buildMultiConfirmationMessage(results);
+
       if (loadingMessageId) {
         await telegramClient.editMessage(chatId, loadingMessageId, confirmationMessage, keyboard);
       } else {

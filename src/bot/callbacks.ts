@@ -56,30 +56,36 @@ export class CallbackHandlers {
       return;
     }
 
-    try {
-      Logger.log("Attempting to write data: " + JSON.stringify(storedData));
+    Logger.log("Attempting to write data: " + JSON.stringify(storedData));
 
-      // Validate transaction
-      Validator.validateTransaction(storedData);
+    const saved: typeof storedData = [];
+    const failed: { gasto: (typeof storedData)[0]; error: unknown }[] = [];
 
-      // Write to sheet
-      await this.sheetsClient.writeGasto(storedData.datos);
-    } catch (error) {
-      Logger.error("ERROR writing to sheet from callback", error);
-      await this.sendSaveError(chatId, messageId, callbackId, error);
+    for (const gasto of storedData) {
+      try {
+        Validator.validateTransaction(gasto);
+        await this.sheetsClient.writeGasto(gasto.datos);
+        saved.push(gasto);
+      } catch (error) {
+        Logger.error("ERROR writing gasto to sheet", error);
+        failed.push({ gasto, error });
+      }
+    }
+
+    if (saved.length === 0) {
+      await this.sendSaveError(chatId, messageId, callbackId, failed[0].error);
       return;
     }
 
-    // These are useful for follow-up UX, but the transaction is already saved.
     pendingOperations.deleteOperation(operationId);
 
     contextManager.setContext(chatId, {
-      tipo: storedData.tipo,
-      datos: storedData.datos,
+      tipo: saved[saved.length - 1].tipo,
+      datos: saved[saved.length - 1].datos,
     });
 
     try {
-      await sessionManager.saveLastConfirmed(chatId, storedData);
+      await sessionManager.saveLastConfirmed(chatId, saved[saved.length - 1]);
       await sessionManager.deleteSession(chatId);
     } catch (error) {
       Logger.warn(
@@ -87,7 +93,7 @@ export class CallbackHandlers {
       );
     }
 
-    const resumen = this.generateResumen(storedData);
+    const resumen = this.generateResumen(saved, failed.length);
     await this.sendSaveSuccess(chatId, messageId, callbackId, resumen);
   }
 
@@ -194,9 +200,10 @@ export class CallbackHandlers {
     }
   }
 
-  private generateResumen(data: TransactionResult): string {
-    const d = data.datos;
-    return `📝 ${d.descripcion} - $${d.monto}\n🏷️ ${d.macro_categoria} → ${d.subcategoria}`;
+  private generateResumen(saved: TransactionResult[], failedCount: number): string {
+    const items = saved.map((g) => `📝 ${g.datos.descripcion} - $${g.datos.monto}`).join("\n");
+    const failureNote = failedCount > 0 ? `\n\n⚠️ ${failedCount} gasto(s) no se pudieron guardar.` : "";
+    return items + failureNote;
   }
 
   private async sendOrEditMessage(chatId: number, messageId: number, text: string): Promise<void> {

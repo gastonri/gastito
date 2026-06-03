@@ -115,7 +115,7 @@ export interface AudioData {
 // Pending Operation Types
 export interface PendingOperation {
   operationId: string;
-  data: TransactionResult;
+  data: TransactionResult[];
   timestamp: number;
 }
 

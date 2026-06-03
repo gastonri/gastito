@@ -33,6 +33,24 @@ export class MessageBuilder {
     return mensaje;
   }
 
+  static buildMultiConfirmationMessage(gastos: TransactionResult[]): string {
+    const total = gastos.reduce((sum, g) => sum + (g.datos.monto || 0), 0);
+    const moneda = gastos[0]?.datos.moneda || "ARS";
+
+    let mensaje = `🤔 *¿Confirmás estos ${gastos.length} gastos?*\n\n`;
+    gastos.forEach((g, i) => {
+      const d = g.datos;
+      const miParte = d.mi_parte !== undefined ? d.mi_parte : 100;
+      mensaje += `*${i + 1}.* ${escapeMarkdown(d.descripcion)} — $${d.monto} ${d.moneda || "ARS"}\n`;
+      mensaje += `   🏷️ ${d.macro_categoria} → ${d.subcategoria}\n`;
+      if (miParte < 100) mensaje += `   💰 Mi parte: ${miParte}%\n`;
+      if (d.cuotas && d.cuotas > 1) mensaje += `   💳 ${d.cuotas} cuotas\n`;
+    });
+    mensaje += `\n💵 *Total: $${total} ${moneda}*`;
+
+    return mensaje;
+  }
+
   static buildContextSummary(context: { tipo: string; datos: import("../types").TransactionData }): string {
     const d = context.datos;
     return (
