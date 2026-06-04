@@ -24,7 +24,11 @@ export const config = {
     ).toLowerCase(), // "gemini" or "anthropic"
     gemini: {
       apiKey: process.env.GEMINI_API_KEY || "",
+      apiKeys: process.env.GEMINI_API_KEYS
+        ? process.env.GEMINI_API_KEYS.split(",").map((k) => k.trim()).filter(Boolean)
+        : [process.env.GEMINI_API_KEY || ""].filter(Boolean),
       modelName: process.env.GEMINI_MODEL_NAME || "gemini-2.5-flash",
+      rateLimitCooldownMs: parseInt(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || "60000", 10),
     },
     anthropic: {
       apiKey: process.env.ANTHROPIC_API_KEY || "",
