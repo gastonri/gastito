@@ -184,6 +184,69 @@ app.post("/webhook", async (req: Request, res: Response) => {
         return;
       }
 
+      if (message.text.startsWith("/ayuda")) {
+        await telegramClient.sendMessage(
+          chatId,
+          "*Gastito — comandos disponibles*\n\n" +
+          "Mandá texto, una foto de ticket o un audio y el bot detecta automáticamente si es un gasto, ingreso o transferencia.\n\n" +
+          "*Comandos*\n" +
+          "`/ayuda` — muestra este mensaje\n" +
+          "`/resumen` — gastos del mes agrupados por categoría\n" +
+          "`/contexto` — muestra el último registro confirmado\n" +
+          "`/model` — muestra el modelo de IA actual\n" +
+          "`/model gemini` o `/model anthropic` — cambia el modelo\n" +
+          "`/nuevo` o `/reset` — limpia el contexto y empieza de cero\n" +
+          "`/exit` — termina la sesión actual\n\n" +
+          "*Consejos*\n" +
+          "• Podés mandar varios gastos en un solo mensaje\n" +
+          "• Las fotos de tickets se analizan automáticamente\n" +
+          "• Los audios se transcriben antes de procesar"
+        );
+        res.status(200).send("OK");
+        return;
+      }
+
+      if (message.text.startsWith("/resumen")) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        const monthName = monthNames[month - 1];
+
+        try {
+          const gastos = await sheetsClient.getGastosDelMes(year, month);
+
+          if (gastos.length === 0) {
+            await telegramClient.sendMessage(chatId, `📊 No hay gastos registrados en ${monthName}.`);
+            res.status(200).send("OK");
+            return;
+          }
+
+          const totales = new Map<string, number>();
+          for (const g of gastos) {
+            totales.set(g.macro_categoria, (totales.get(g.macro_categoria) ?? 0) + g.monto);
+          }
+
+          const ordenados = [...totales.entries()].sort((a, b) => b[1] - a[1]);
+          const total = ordenados.reduce((sum, [, v]) => sum + v, 0);
+
+          const sep = "━━━━━━━━━━━━━━━";
+          let msg = `📊 *Gastos de ${monthName}*\n${sep}\n`;
+          for (const [cat, monto] of ordenados) {
+            const pct = Math.round((monto / total) * 100);
+            msg += `${cat}\n   $${monto.toLocaleString("es-AR")} _(${pct}%)_\n`;
+          }
+          msg += `${sep}\nTotal: $${total.toLocaleString("es-AR")} ARS`;
+
+          await telegramClient.sendMessage(chatId, msg);
+        } catch {
+          await telegramClient.sendMessage(chatId, "❌ No se pudo leer la planilla. Intentá de nuevo.");
+        }
+
+        res.status(200).send("OK");
+        return;
+      }
+
       if (message.text.startsWith("/model")) {
         const parts = message.text.trim().split(/\s+/);
         if (parts.length === 1) {

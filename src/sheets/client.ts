@@ -295,6 +295,36 @@ export class SheetsClient {
     }
   }
 
+  async getGastosDelMes(year: number, month: number): Promise<{ macro_categoria: string; monto: number; moneda: string }[]> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: "GASTOS!A:P",
+      });
+      const rows = (response.data.values as unknown[][]) || [];
+      const result: { macro_categoria: string; monto: number; moneda: string }[] = [];
+      for (const row of rows) {
+        const rowYear = Number(row[13]);
+        const rowMonth = Number(row[14]);
+        if (rowYear !== year || rowMonth !== month) continue;
+        const monto = parseFloat(String(row[5] ?? "0"));
+        if (isNaN(monto) || monto <= 0) continue;
+        result.push({
+          macro_categoria: String(row[3] ?? "Sin categoría").trim(),
+          monto,
+          moneda: String(row[6] ?? "ARS").trim(),
+        });
+      }
+      return result;
+    } catch (error) {
+      Logger.error("Error reading GASTOS from Sheets", error);
+      throw new SheetsAPIError(`Failed to read GASTOS: ${getErrorMessage(error)}`);
+    }
+  }
+
   private async getLastRow(sheetName: string): Promise<number> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
