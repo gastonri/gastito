@@ -14,7 +14,7 @@ export class MessageBuilder {
     const miParte = d.mi_parte !== undefined ? d.mi_parte : 100;
 
     let mensaje =
-      `🤔 *¿Confirmás este gasto?*\n\n` +
+      `🤔 *${descripcion} — ¿lo anoto?*\n\n` +
       `📝 *Descripción:* ${descripcion}\n` +
       `💵 *Monto:* $${d.monto} ${d.moneda || "ARS"}\n` +
       `📅 *Fecha:* ${d.fecha || "Hoy"}\n` +
@@ -60,6 +60,29 @@ export class MessageBuilder {
     mensaje += `Total: $${total} ${moneda}`;
 
     return mensaje;
+  }
+
+  static buildSuccessMessage(saved: TransactionResult[], failedCount: number): string {
+    const failureNote = failedCount > 0 ? `\n\n⚠️ ${failedCount} gasto(s) no se pudieron guardar.` : "";
+
+    if (saved.length === 1) {
+      const d = saved[0].datos;
+      let msg = `✅ *Anotado*\n\n`;
+      msg += `${escapeMarkdown(d.descripcion)} · $${d.monto} ${d.moneda || "ARS"}\n`;
+      msg += `${d.macro_categoria} → ${d.subcategoria}`;
+      if (d.fecha) msg += ` · ${d.fecha}`;
+      if (d.persona) msg += ` · ${escapeMarkdown(d.persona)}`;
+      return msg + failureNote;
+    }
+
+    const total = saved.reduce((sum, g) => sum + (g.datos.monto || 0), 0);
+    const moneda = saved[0]?.datos.moneda || "ARS";
+    let msg = `✅ *${saved.length} gastos anotados*\n\n`;
+    saved.forEach((g) => {
+      msg += `${escapeMarkdown(g.datos.descripcion)} · $${g.datos.monto} ${g.datos.moneda || "ARS"}\n`;
+    });
+    msg += `\nTotal: $${total} ${moneda}`;
+    return msg + failureNote;
   }
 
   static buildContextSummary(context: { tipo: string; datos: import("../types").TransactionData }): string {

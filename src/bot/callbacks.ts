@@ -1,4 +1,4 @@
-import { TelegramCallbackQuery, TransactionResult } from "../types";
+import { TelegramCallbackQuery } from "../types";
 import { TelegramClient } from "./telegram";
 import { SheetsClient } from "../sheets/client";
 import { Validator } from "../services/validator";
@@ -93,8 +93,8 @@ export class CallbackHandlers {
       );
     }
 
-    const resumen = this.generateResumen(saved, failed.length);
-    await this.sendSaveSuccess(chatId, messageId, callbackId, resumen);
+    const successMessage = MessageBuilder.buildSuccessMessage(saved, failed.length);
+    await this.sendSaveSuccess(chatId, messageId, callbackId, successMessage);
   }
 
   private async handleCancel(
@@ -200,12 +200,6 @@ export class CallbackHandlers {
     }
   }
 
-  private generateResumen(saved: TransactionResult[], failedCount: number): string {
-    const items = saved.map((g) => `📝 ${g.datos.descripcion} - $${g.datos.monto}`).join("\n");
-    const failureNote = failedCount > 0 ? `\n\n⚠️ ${failedCount} gasto(s) no se pudieron guardar.` : "";
-    return items + failureNote;
-  }
-
   private async sendOrEditMessage(chatId: number, messageId: number, text: string): Promise<void> {
     try {
       await this.telegramClient.editMessage(chatId, messageId, text);
@@ -219,9 +213,9 @@ export class CallbackHandlers {
     chatId: number,
     messageId: number,
     callbackId: string,
-    resumen: string
+    successMessage: string
   ): Promise<void> {
-    await this.sendOrEditMessage(chatId, messageId, "✅ *¡Anotado perfectamente!*\n\n" + resumen);
+    await this.sendOrEditMessage(chatId, messageId, successMessage);
 
     try {
       await this.telegramClient.answerCallbackQuery(callbackId, "✓ Guardado");

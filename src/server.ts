@@ -226,6 +226,8 @@ app.post("/webhook", async (req: Request, res: Response) => {
       }
     }
 
+    telegramClient.sendChatAction(chatId, "typing");
+
     let results: TransactionResult[] | undefined;
     let loadingMessageId: number | null = null;
 

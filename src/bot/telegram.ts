@@ -88,6 +88,12 @@ export class TelegramClient {
     }
   }
 
+  sendChatAction(chatId: number, action: string): void {
+    axios
+      .post(`${this.baseUrl}/sendChatAction`, { chat_id: chatId.toString(), action })
+      .catch(() => {});
+  }
+
   async answerCallbackQuery(callbackId: string, text: string): Promise<void> {
     try {
       await axios.post(`${this.baseUrl}/answerCallbackQuery`, {
