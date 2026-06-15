@@ -23,5 +23,3 @@ else
   echo "This script copies .env.staging or .env.production to .env"
   exit 1
 fi
-
-

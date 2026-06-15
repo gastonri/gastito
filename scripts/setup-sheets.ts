@@ -35,6 +35,7 @@ const CATEGORIES: Record<string, string[]> = {
     "Obra Social/Prepaga",
     "Consultas médicas",
     "Odontología",
+    "Psicología",
     "Deporte/Gym",
   ],
   EDUCACIÓN: [

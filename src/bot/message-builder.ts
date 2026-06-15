@@ -36,17 +36,28 @@ export class MessageBuilder {
   static buildMultiConfirmationMessage(gastos: TransactionResult[]): string {
     const total = gastos.reduce((sum, g) => sum + (g.datos.monto || 0), 0);
     const moneda = gastos[0]?.datos.moneda || "ARS";
+    const sep = "━━━━━━━━━━━━━━━";
 
-    let mensaje = `🤔 *¿Confirmás estos ${gastos.length} gastos?*\n\n`;
-    gastos.forEach((g, i) => {
+    let mensaje = `🤔 *¿Confirmás estos ${gastos.length} gastos?*\n`;
+    gastos.forEach((g) => {
       const d = g.datos;
       const miParte = d.mi_parte !== undefined ? d.mi_parte : 100;
-      mensaje += `*${i + 1}.* ${escapeMarkdown(d.descripcion)} — $${d.monto} ${d.moneda || "ARS"}\n`;
-      mensaje += `   🏷️ ${d.macro_categoria} → ${d.subcategoria}\n`;
-      if (miParte < 100) mensaje += `   💰 Mi parte: ${miParte}%\n`;
-      if (d.cuotas && d.cuotas > 1) mensaje += `   💳 ${d.cuotas} cuotas\n`;
+      const extras: string[] = [];
+      if (miParte < 100) extras.push(`${miParte}% mi parte`);
+      if (d.cuotas && d.cuotas > 1) extras.push(`${d.cuotas} cuotas`);
+
+      mensaje += `${sep}\n`;
+      mensaje += `🧾 ${escapeMarkdown(d.descripcion)}\n`;
+      mensaje += `   $${d.monto} ${d.moneda || "ARS"}`;
+      if (d.fecha) mensaje += ` · ${d.fecha}`;
+      if (d.persona) mensaje += ` · ${escapeMarkdown(d.persona)}`;
+      mensaje += `\n`;
+      mensaje += `   ${d.macro_categoria} → ${d.subcategoria}`;
+      if (extras.length) mensaje += ` · ${extras.join(" · ")}`;
+      mensaje += `\n`;
     });
-    mensaje += `\n💵 *Total: $${total} ${moneda}*`;
+    mensaje += `${sep}\n`;
+    mensaje += `Total: $${total} ${moneda}`;
 
     return mensaje;
   }
