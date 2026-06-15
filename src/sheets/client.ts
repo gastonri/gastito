@@ -321,7 +321,7 @@ export class SheetsClient {
           }
         }
         if (rowYear !== year || rowMonth !== month) continue;
-        const monto = parseFloat(String(row[5] ?? "0"));
+        const monto = parseFloat(String(row[9] ?? "0"));
         if (isNaN(monto) || monto <= 0) continue;
         result.push({
           macro_categoria: String(row[3] ?? "Sin categoría").trim(),
