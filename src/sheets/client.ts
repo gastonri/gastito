@@ -305,6 +305,10 @@ export class SheetsClient {
         range: "GASTOS!A:P",
       });
       const rows = (response.data.values as unknown[][]) || [];
+      Logger.log(`getGastosDelMes: ${rows.length} rows returned, filtering for ${year}/${month}`);
+      if (rows.length > 1) {
+        Logger.log(`getGastosDelMes sample row[1]: length=${rows[1]?.length}, [0]=${rows[1]?.[0]}, [13]=${rows[1]?.[13]}, [14]=${rows[1]?.[14]}`);
+      }
       const result: { macro_categoria: string; monto: number; moneda: string }[] = [];
       for (const row of rows) {
         let rowYear = Number(row[13]);
