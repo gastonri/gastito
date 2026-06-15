@@ -307,8 +307,15 @@ export class SheetsClient {
       const rows = (response.data.values as unknown[][]) || [];
       const result: { macro_categoria: string; monto: number; moneda: string }[] = [];
       for (const row of rows) {
-        const rowYear = Number(row[13]);
-        const rowMonth = Number(row[14]);
+        let rowYear = Number(row[13]);
+        let rowMonth = Number(row[14]);
+        if (!rowYear || !rowMonth) {
+          const parts = String(row[0] ?? "").split("/");
+          if (parts.length === 3) {
+            rowYear = Number(parts[2]);
+            rowMonth = Number(parts[1]);
+          }
+        }
         if (rowYear !== year || rowMonth !== month) continue;
         const monto = parseFloat(String(row[5] ?? "0"));
         if (isNaN(monto) || monto <= 0) continue;
