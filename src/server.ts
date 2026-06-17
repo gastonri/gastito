@@ -15,6 +15,7 @@ import { sessionManager } from "./services/session-manager";
 import { ConversationHandler } from "./services/conversation-handler";
 import { MessageBuilder } from "./bot/message-builder";
 import { initializeUserPreferences } from "./services/user-preferences";
+import { ChartService } from "./services/chart";
 
 const app = express();
 app.use(express.json());
@@ -192,6 +193,7 @@ app.post("/webhook", async (req: Request, res: Response) => {
           "*Comandos*\n" +
           "`/ayuda` — muestra este mensaje\n" +
           "`/resumen` — gastos del mes agrupados por categoría\n" +
+          "`/grafico` — gráfico de barras con gasto diario y acumulado del mes\n" +
           "`/contexto` — muestra el último registro confirmado\n" +
           "`/model` — muestra el modelo de IA actual\n" +
           "`/model gemini` o `/model anthropic` — cambia el modelo\n" +
@@ -241,6 +243,34 @@ app.post("/webhook", async (req: Request, res: Response) => {
           await telegramClient.sendMessage(chatId, msg);
         } catch {
           await telegramClient.sendMessage(chatId, "❌ No se pudo leer la planilla. Intentá de nuevo.");
+        }
+
+        res.status(200).send("OK");
+        return;
+      }
+
+      if (message.text.startsWith("/grafico")) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        const monthName = monthNames[month - 1];
+
+        telegramClient.sendChatAction(chatId, "upload_photo");
+        try {
+          const gastosPorDia = await sheetsClient.getGastosPorDiaDelMes(year, month);
+
+          if (gastosPorDia.length === 0) {
+            await telegramClient.sendMessage(chatId, `📊 No hay gastos registrados en ${monthName}.`);
+            res.status(200).send("OK");
+            return;
+          }
+
+          const chartBuffer = await ChartService.generateDailyExpensesChart(year, month, gastosPorDia);
+          await telegramClient.sendPhoto(chatId, chartBuffer, `📊 Gastos de ${monthName} ${year}`);
+        } catch (error) {
+          Logger.error("Error generating chart", error instanceof Error ? error : null);
+          await telegramClient.sendMessage(chatId, "❌ No se pudo generar el gráfico. Intentá de nuevo.");
         }
 
         res.status(200).send("OK");

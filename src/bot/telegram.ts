@@ -152,6 +152,27 @@ export class TelegramClient {
     }
   }
 
+  async sendPhoto(chatId: number, photoBuffer: Buffer, caption?: string): Promise<void> {
+    try {
+      const form = new FormData();
+      form.append("chat_id", chatId.toString());
+      const blob = new Blob([photoBuffer], { type: "image/png" });
+      form.append("photo", blob, "chart.png");
+      if (caption) form.append("caption", caption);
+
+      await axios.post(`${this.baseUrl}/sendPhoto`, form);
+    } catch (error) {
+      Logger.error("Error sending photo to Telegram", error);
+      if (axios.isAxiosError(error)) {
+        throw new TelegramAPIError(
+          `Failed to send photo: ${error.message}`,
+          error.response?.status
+        );
+      }
+      throw error;
+    }
+  }
+
   async setWebhook(url: string): Promise<void> {
     try {
       await axios.post(`${this.baseUrl}/setWebhook`, { url });

@@ -295,6 +295,48 @@ export class SheetsClient {
     }
   }
 
+  async getGastosPorDiaDelMes(year: number, month: number): Promise<{ dia: number; monto: number }[]> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: "GASTOS!A:P",
+      });
+      const rows = (response.data.values as unknown[][]) || [];
+      const byDay = new Map<number, number>();
+
+      for (const row of rows) {
+        let rowYear = Number(row[13]);
+        let rowMonth = Number(row[14]);
+        let rowDay = Number(row[15]);
+
+        if (!rowYear || !rowMonth) {
+          const parts = String(row[0] ?? "").split("/");
+          if (parts.length === 3) {
+            rowDay = Number(parts[0]);
+            rowMonth = Number(parts[1]);
+            rowYear = Number(parts[2]);
+          }
+        }
+
+        if (rowYear !== year || rowMonth !== month) continue;
+        const monto = parseFloat(String(row[9] ?? "0"));
+        if (isNaN(monto) || monto <= 0) continue;
+
+        byDay.set(rowDay, (byDay.get(rowDay) ?? 0) + monto);
+      }
+
+      return [...byDay.entries()]
+        .map(([dia, monto]) => ({ dia, monto }))
+        .sort((a, b) => a.dia - b.dia);
+    } catch (error) {
+      Logger.error("Error reading GASTOS por dia from Sheets", error);
+      throw new SheetsAPIError(`Failed to read GASTOS por dia: ${getErrorMessage(error)}`);
+    }
+  }
+
   async getGastosDelMes(year: number, month: number): Promise<{ macro_categoria: string; monto: number; moneda: string }[]> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
