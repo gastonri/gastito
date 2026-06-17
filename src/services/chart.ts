@@ -1,4 +1,5 @@
 import axios from "axios";
+import { Logger } from "../utils/logger";
 
 const MONTH_NAMES = [
   "Enero","Febrero","Marzo","Abril","Mayo","Junio",
@@ -30,6 +31,7 @@ export class ChartService {
     const labels = Array.from({ length: lastDay }, (_, i) => String(i + 1));
     const title = `Gastos de ${MONTH_NAMES[month - 1]} ${year}`;
 
+    // Chart.js v2 syntax (QuickChart default)
     const chartConfig = {
       type: "bar",
       data: {
@@ -41,7 +43,6 @@ export class ChartService {
             data: dailyData,
             backgroundColor: "rgba(99, 132, 255, 0.75)",
             yAxisID: "y",
-            order: 2,
           },
           {
             type: "line",
@@ -52,39 +53,49 @@ export class ChartService {
             borderWidth: 2,
             pointRadius: 2,
             fill: false,
-            tension: 0.1,
             yAxisID: "y2",
-            order: 1,
           },
         ],
       },
       options: {
-        plugins: {
-          title: { display: true, text: title, font: { size: 16 } },
-          legend: { display: true, position: "top" },
-        },
+        title: { display: true, text: title, fontSize: 16 },
+        legend: { display: true, position: "top" },
         scales: {
-          y: {
-            position: "left",
-            title: { display: true, text: "ARS / día" },
-            beginAtZero: true,
-          },
-          y2: {
-            position: "right",
-            title: { display: true, text: "Acumulado ARS" },
-            beginAtZero: true,
-            grid: { drawOnChartArea: false },
-          },
+          yAxes: [
+            {
+              id: "y",
+              position: "left",
+              scaleLabel: { display: true, labelString: "ARS / día" },
+              ticks: { beginAtZero: true },
+            },
+            {
+              id: "y2",
+              position: "right",
+              scaleLabel: { display: true, labelString: "Acumulado ARS" },
+              ticks: { beginAtZero: true },
+              gridLines: { drawOnChartArea: false },
+            },
+          ],
         },
       },
     };
 
-    const response = await axios.post<ArrayBuffer>(
-      "https://quickchart.io/chart",
-      { chart: chartConfig, width: 800, height: 400, backgroundColor: "white" },
-      { responseType: "arraybuffer", timeout: 15000 }
-    );
-
-    return Buffer.from(response.data);
+    try {
+      const response = await axios.post<ArrayBuffer>(
+        "https://quickchart.io/chart",
+        { chart: chartConfig, width: 800, height: 400, backgroundColor: "white" },
+        { responseType: "arraybuffer", timeout: 15000 }
+      );
+      return Buffer.from(response.data);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const body = error.response?.data
+          ? Buffer.from(error.response.data as ArrayBuffer).toString("utf8").substring(0, 300)
+          : "no body";
+        Logger.error(`QuickChart error ${status}: ${body}`, null);
+      }
+      throw error;
+    }
   }
 }
