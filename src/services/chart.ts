@@ -28,7 +28,11 @@ export class ChartService {
       return acc;
     }, []);
 
-    const labels = Array.from({ length: lastDay }, (_, i) => String(i + 1));
+    const DAY_NAMES = ["Dom","Lun","Mar","Mie","Jue","Vie","Sab"];
+    const labels = Array.from({ length: lastDay }, (_, i) => {
+      const dow = new Date(year, month - 1, i + 1).getDay();
+      return `${i + 1} ${DAY_NAMES[dow]}`;
+    });
     const title = `Gastos de ${MONTH_NAMES[month - 1]} ${year}`;
 
     // Chart.js v2 syntax (QuickChart default)
