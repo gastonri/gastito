@@ -14,12 +14,7 @@ function formatDateForSheets(date: Date): string {
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
 }
-import {
-  CategoryMap,
-  ConfigData,
-  TransactionData,
-  GoogleSheetsSpreadsheet,
-} from "../types";
+import { CategoryMap, ConfigData, TransactionData, GoogleSheetsSpreadsheet } from "../types";
 
 export class SheetsClient {
   private auth: InstanceType<typeof google.auth.GoogleAuth> | null = null;
@@ -63,9 +58,7 @@ export class SheetsClient {
       Logger.log("Google Sheets client initialized");
     } catch (error) {
       Logger.error("Error initializing Google Sheets client", error);
-      throw new SheetsAPIError(
-        `Failed to initialize Sheets client: ${getErrorMessage(error)}`
-      );
+      throw new SheetsAPIError(`Failed to initialize Sheets client: ${getErrorMessage(error)}`);
     }
   }
 
@@ -106,9 +99,7 @@ export class SheetsClient {
       };
     } catch (error) {
       Logger.error("Error reading config from Sheets", error);
-      throw new SheetsAPIError(
-        `Failed to read config: ${getErrorMessage(error)}`
-      );
+      throw new SheetsAPIError(`Failed to read config: ${getErrorMessage(error)}`);
     }
   }
 
@@ -140,9 +131,7 @@ export class SheetsClient {
       return mapa;
     } catch (error) {
       Logger.error("Error creating category map", error);
-      throw new SheetsAPIError(
-        `Failed to create category map: ${getErrorMessage(error)}`
-      );
+      throw new SheetsAPIError(`Failed to create category map: ${getErrorMessage(error)}`);
     }
   }
 
@@ -254,17 +243,19 @@ export class SheetsClient {
         range: `${sheetName}!A${newRow}:I${newRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [[
-            formatDateForSheets(fecha),
-            (data.persona || "").trim(),
-            (data.descripcion || "").trim(),
-            (data.macro_categoria || "").trim(),
-            subcategoriaConEmoji,
-            parseFloat(String(data.monto || 0)),
-            data.moneda || "ARS",
-            String(cuotas),
-            String(nCuota),
-          ]],
+          values: [
+            [
+              formatDateForSheets(fecha),
+              (data.persona || "").trim(),
+              (data.descripcion || "").trim(),
+              (data.macro_categoria || "").trim(),
+              subcategoriaConEmoji,
+              parseFloat(String(data.monto || 0)),
+              data.moneda || "ARS",
+              String(cuotas),
+              String(nCuota),
+            ],
+          ],
         },
       });
 
@@ -274,28 +265,31 @@ export class SheetsClient {
         range: `${sheetName}!J${newRow}:P${newRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [[
-            `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow}),"")`,
-            String(miParte),
-            (data.link || "").trim(),
-            (data.notas || "").trim(),
-            fecha.getFullYear(),
-            fecha.getMonth() + 1,
-            fecha.getDate(),
-          ]],
+          values: [
+            [
+              `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow}),"")`,
+              String(miParte),
+              (data.link || "").trim(),
+              (data.notas || "").trim(),
+              fecha.getFullYear(),
+              fecha.getMonth() + 1,
+              fecha.getDate(),
+            ],
+          ],
         },
       });
 
       Logger.log(`✅ GASTO written successfully in row ${newRow}`);
     } catch (error) {
       Logger.error("Error writing GASTO to Sheets", error);
-      throw new SheetsAPIError(
-        `Failed to write GASTO: ${getErrorMessage(error)}`
-      );
+      throw new SheetsAPIError(`Failed to write GASTO: ${getErrorMessage(error)}`);
     }
   }
 
-  async getGastosPorDiaDelMes(year: number, month: number): Promise<{ dia: number; monto: number }[]> {
+  async getGastosPorDiaDelMes(
+    year: number,
+    month: number
+  ): Promise<{ dia: number; monto: number }[]> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
     }
@@ -337,7 +331,10 @@ export class SheetsClient {
     }
   }
 
-  async getGastosDelMes(year: number, month: number): Promise<{ macro_categoria: string; monto: number; moneda: string }[]> {
+  async getGastosDelMes(
+    year: number,
+    month: number
+  ): Promise<{ macro_categoria: string; monto: number; moneda: string }[]> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
     }
@@ -349,7 +346,9 @@ export class SheetsClient {
       const rows = (response.data.values as unknown[][]) || [];
       Logger.log(`getGastosDelMes: ${rows.length} rows returned, filtering for ${year}/${month}`);
       if (rows.length > 1) {
-        Logger.log(`getGastosDelMes sample row[1]: length=${rows[1]?.length}, [0]=${rows[1]?.[0]}, [13]=${rows[1]?.[13]}, [14]=${rows[1]?.[14]}`);
+        Logger.log(
+          `getGastosDelMes sample row[1]: length=${rows[1]?.length}, [0]=${rows[1]?.[0]}, [13]=${rows[1]?.[13]}, [14]=${rows[1]?.[14]}`
+        );
       }
       const result: { macro_categoria: string; monto: number; moneda: string }[] = [];
       for (const row of rows) {
@@ -375,6 +374,45 @@ export class SheetsClient {
     } catch (error) {
       Logger.error("Error reading GASTOS from Sheets", error);
       throw new SheetsAPIError(`Failed to read GASTOS: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Reads monthly budgets per category from the PRESUPUESTOS sheet (columns: categoria, monto).
+   * Returns an empty array if the sheet doesn't exist yet.
+   */
+  async getPresupuestos(): Promise<{ macro_categoria: string; monto: number }[]> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const exists = await this.sheetExists("PRESUPUESTOS");
+      if (!exists) {
+        return [];
+      }
+
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: "PRESUPUESTOS!A:B",
+      });
+      const rows = (response.data.values as unknown[][]) || [];
+      const result: { macro_categoria: string; monto: number }[] = [];
+
+      for (let i = rows.length > 0 && rows[0]?.[0] === "categoria" ? 1 : 0; i < rows.length; i++) {
+        const row = rows[i];
+        const cell0 = row?.[0];
+        const cell1 = row?.[1];
+        const categoria = typeof cell0 === "string" ? cell0.trim() : "";
+        const monto =
+          typeof cell1 === "number" ? cell1 : parseFloat(typeof cell1 === "string" ? cell1 : "0");
+        if (!categoria || isNaN(monto) || monto <= 0) continue;
+        result.push({ macro_categoria: categoria, monto });
+      }
+
+      return result;
+    } catch (error) {
+      Logger.error("Error reading PRESUPUESTOS from Sheets", error);
+      throw new SheetsAPIError(`Failed to read PRESUPUESTOS: ${getErrorMessage(error)}`);
     }
   }
 
@@ -551,9 +589,7 @@ export class SheetsClient {
       }
     } catch (error) {
       Logger.error("Error writing AI provider to Sheets", error);
-      throw new SheetsAPIError(
-        `Failed to write AI provider: ${getErrorMessage(error)}`
-      );
+      throw new SheetsAPIError(`Failed to write AI provider: ${getErrorMessage(error)}`);
     }
   }
 }

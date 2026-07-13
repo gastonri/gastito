@@ -1,10 +1,6 @@
 import axios from "axios";
 import { Logger } from "../utils/logger";
-
-const MONTH_NAMES = [
-  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
-];
+import { MONTH_NAMES_ES_CAP as MONTH_NAMES } from "../utils/months";
 
 export class ChartService {
   static async generateDailyExpensesChart(
@@ -28,7 +24,7 @@ export class ChartService {
       return acc;
     }, []);
 
-    const DAY_NAMES = ["Dom","Lun","Mar","Mie","Jue","Vie","Sab"];
+    const DAY_NAMES = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
     const labels = Array.from({ length: lastDay }, (_, i) => {
       const dow = new Date(year, month - 1, i + 1).getDay();
       return `${i + 1} ${DAY_NAMES[dow]}`;
@@ -95,7 +91,9 @@ export class ChartService {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
         const body = error.response?.data
-          ? Buffer.from(error.response.data as ArrayBuffer).toString("utf8").substring(0, 300)
+          ? Buffer.from(error.response.data as ArrayBuffer)
+              .toString("utf8")
+              .substring(0, 300)
           : "no body";
         Logger.error(`QuickChart error ${status}: ${body}`, null);
       }
@@ -120,7 +118,9 @@ export class ChartService {
 
     const categorias = [...new Set([...totalsA.keys(), ...totalsB.keys()])].sort(
       (a, b) =>
-        (totalsA.get(b) ?? 0) + (totalsB.get(b) ?? 0) - ((totalsA.get(a) ?? 0) + (totalsB.get(a) ?? 0))
+        (totalsA.get(b) ?? 0) +
+        (totalsB.get(b) ?? 0) -
+        ((totalsA.get(a) ?? 0) + (totalsB.get(a) ?? 0))
     );
 
     const labelA = `${MONTH_NAMES[periodA.month - 1]} ${periodA.year}`;
@@ -168,7 +168,9 @@ export class ChartService {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
         const body = error.response?.data
-          ? Buffer.from(error.response.data as ArrayBuffer).toString("utf8").substring(0, 300)
+          ? Buffer.from(error.response.data as ArrayBuffer)
+              .toString("utf8")
+              .substring(0, 300)
           : "no body";
         Logger.error(`QuickChart error ${status}: ${body}`, null);
       }

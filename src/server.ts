@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import { config } from "./config";
 import { Logger } from "./utils/logger";
-import { TelegramUpdate, TransactionResult } from "./types";
+import { TelegramUpdate } from "./types";
 import { TelegramClient } from "./bot/telegram";
 import { MessageHandlers } from "./bot/handlers";
 import { CallbackHandlers } from "./bot/callbacks";
@@ -9,13 +9,11 @@ import { AIClientManager } from "./ai/client";
 import { SheetsClient } from "./sheets/client";
 import { ImageProcessor } from "./services/image-processor";
 import { AudioProcessor } from "./services/audio-processor";
-import { pendingOperations } from "./services/pending-operations";
-import { contextManager } from "./services/context-manager";
 import { sessionManager } from "./services/session-manager";
 import { ConversationHandler } from "./services/conversation-handler";
-import { MessageBuilder } from "./bot/message-builder";
 import { initializeUserPreferences } from "./services/user-preferences";
-import { ChartService } from "./services/chart";
+import { dispatchCommand } from "./bot/commands";
+import { processIncomingMessage } from "./bot/message-processor";
 
 const app = express();
 app.use(express.json());
@@ -44,19 +42,6 @@ const conversationHandler = new ConversationHandler(messageHandlers);
 
 // Wire up conversation handler to callback handlers
 callbackHandlers.setConversationHandler(conversationHandler);
-
-// Helper to check if a single-result response is modifying an existing pending operation
-function isModifyingPending(results: TransactionResult[], chatId: number): boolean {
-  if (results.length !== 1) return false;
-  const existingPending = pendingOperations.getLastPendingOperation(chatId);
-  if (!existingPending) return false;
-
-  const result = results[0];
-  if (result.usa_contexto) return true;
-  if (result.tipo === "GASTO" && result.datos.monto === existingPending.datos.monto) return true;
-
-  return false;
-}
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
@@ -144,256 +129,14 @@ app.post("/webhook", async (req: Request, res: Response) => {
 
     // Handle commands
     if (message.text) {
-      if (message.text.startsWith("/exit")) {
-        // Terminate session explicitly
-        await sessionManager.deleteSession(chatId);
-        contextManager.clearContext(chatId);
-        await telegramClient.sendMessage(
-          chatId,
-          "👋 *Sesión terminada*\n\nPodés empezar de nuevo cuando quieras."
-        );
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/nuevo") || message.text.startsWith("/reset")) {
-        await sessionManager.deleteSession(chatId);
-        contextManager.clearContext(chatId);
-        await telegramClient.sendMessage(
-          chatId,
-          "🔄 *Contexto limpiado*\n\nEmpezando conversación nueva."
-        );
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/contexto")) {
-        const contextoPrevio = contextManager.getContext(chatId);
-        if (contextoPrevio) {
-          const resumen = MessageBuilder.buildContextSummary(contextoPrevio);
-          await telegramClient.sendMessage(
-            chatId,
-            `📋 *Último registro confirmado:*\n\n${resumen}`
-          );
-        } else {
-          await telegramClient.sendMessage(
-            chatId,
-            "📋 No hay contexto previo. Empezá una nueva conversación."
-          );
-        }
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/ayuda")) {
-        await telegramClient.sendMessage(
-          chatId,
-          "*Gastito — comandos disponibles*\n\n" +
-          "Mandá texto, una foto de ticket o un audio y el bot detecta automáticamente si es un gasto, ingreso o transferencia.\n\n" +
-          "*Comandos*\n" +
-          "`/ayuda` — muestra este mensaje\n" +
-          "`/resumen` — gastos del mes agrupados por categoría\n" +
-          "`/grafico` — gráfico de barras con gasto diario y acumulado del mes\n" +
-          "`/comparar` — compara gastos por categoría del mes actual vs. el anterior\n" +
-          "`/comparar <mes>` o `/comparar <mes1> <mes2>` — compara meses específicos\n" +
-          "`/contexto` — muestra el último registro confirmado\n" +
-          "`/model` — muestra el modelo de IA actual\n" +
-          "`/model gemini` o `/model anthropic` — cambia el modelo\n" +
-          "`/nuevo` o `/reset` — limpia el contexto y empieza de cero\n" +
-          "`/exit` — termina la sesión actual\n\n" +
-          "*Consejos*\n" +
-          "• Podés mandar varios gastos en un solo mensaje\n" +
-          "• Las fotos de tickets se analizan automáticamente\n" +
-          "• Los audios se transcriben antes de procesar"
-        );
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/resumen")) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-        const monthName = monthNames[month - 1];
-
-        try {
-          const gastos = await sheetsClient.getGastosDelMes(year, month);
-
-          if (gastos.length === 0) {
-            await telegramClient.sendMessage(chatId, `📊 No hay gastos registrados en ${monthName}.`);
-            res.status(200).send("OK");
-            return;
-          }
-
-          const totales = new Map<string, number>();
-          for (const g of gastos) {
-            totales.set(g.macro_categoria, (totales.get(g.macro_categoria) ?? 0) + g.monto);
-          }
-
-          const ordenados = [...totales.entries()].sort((a, b) => b[1] - a[1]);
-          const total = ordenados.reduce((sum, [, v]) => sum + v, 0);
-
-          const sep = "━━━━━━━━━━━━━━━";
-          let msg = `📊 *Gastos de ${monthName}*\n${sep}\n`;
-          for (const [cat, monto] of ordenados) {
-            const pct = Math.round((monto / total) * 100);
-            msg += `${cat}\n   $${monto.toLocaleString("es-AR")} _(${pct}%)_\n`;
-          }
-          msg += `${sep}\nTotal: $${total.toLocaleString("es-AR")} ARS`;
-
-          await telegramClient.sendMessage(chatId, msg);
-        } catch {
-          await telegramClient.sendMessage(chatId, "❌ No se pudo leer la planilla. Intentá de nuevo.");
-        }
-
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/grafico")) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-        const monthName = monthNames[month - 1];
-
-        telegramClient.sendChatAction(chatId, "upload_photo");
-        try {
-          const gastosPorDia = await sheetsClient.getGastosPorDiaDelMes(year, month);
-
-          if (gastosPorDia.length === 0) {
-            await telegramClient.sendMessage(chatId, `📊 No hay gastos registrados en ${monthName}.`);
-            res.status(200).send("OK");
-            return;
-          }
-
-          const chartBuffer = await ChartService.generateDailyExpensesChart(year, month, gastosPorDia);
-          await telegramClient.sendPhoto(chatId, chartBuffer, `📊 Gastos de ${monthName} ${year}`);
-        } catch (error) {
-          Logger.error("Error generating chart", error instanceof Error ? error : null);
-          await telegramClient.sendMessage(chatId, "❌ No se pudo generar el gráfico. Intentá de nuevo.");
-        }
-
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/comparar")) {
-        const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-        const monthNamesCap = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-        const now = new Date();
-        const currentMonth = now.getMonth() + 1;
-        const currentYear = now.getFullYear();
-        const args = message.text.trim().split(/\s+/).slice(1).map((p) => p.toLowerCase());
-
-        const resolveMonth = (name: string): { year: number; month: number } | null => {
-          const idx = monthNames.indexOf(name);
-          if (idx === -1) return null;
-          const month = idx + 1;
-          const year = month > currentMonth ? currentYear - 1 : currentYear;
-          return { year, month };
-        };
-
-        const previousOf = (p: { year: number; month: number }) =>
-          p.month === 1 ? { year: p.year - 1, month: 12 } : { year: p.year, month: p.month - 1 };
-
-        let periodA: { year: number; month: number };
-        let periodB: { year: number; month: number };
-
-        if (args.length === 0) {
-          periodA = { year: currentYear, month: currentMonth };
-          periodB = previousOf(periodA);
-        } else if (args.length === 1) {
-          const resolved = resolveMonth(args[0]);
-          if (!resolved) {
-            await telegramClient.sendMessage(
-              chatId,
-              "❌ Mes inválido. Ejemplo: `/comparar julio` o `/comparar julio junio`"
-            );
-            res.status(200).send("OK");
-            return;
-          }
-          periodA = resolved;
-          periodB = previousOf(periodA);
-        } else {
-          const resolvedA = resolveMonth(args[0]);
-          const resolvedB = resolveMonth(args[1]);
-          if (!resolvedA || !resolvedB) {
-            await telegramClient.sendMessage(
-              chatId,
-              "❌ Mes inválido. Ejemplo: `/comparar julio junio`"
-            );
-            res.status(200).send("OK");
-            return;
-          }
-          periodA = resolvedA;
-          periodB = resolvedB;
-        }
-
-        telegramClient.sendChatAction(chatId, "upload_photo");
-        try {
-          const [gastosA, gastosB] = await Promise.all([
-            sheetsClient.getGastosDelMes(periodA.year, periodA.month),
-            sheetsClient.getGastosDelMes(periodB.year, periodB.month),
-          ]);
-
-          if (gastosA.length === 0 && gastosB.length === 0) {
-            await telegramClient.sendMessage(chatId, "📊 No hay gastos registrados en ninguno de los dos meses.");
-            res.status(200).send("OK");
-            return;
-          }
-
-          const chartBuffer = await ChartService.generateComparisonChart(periodA, periodB, gastosA, gastosB);
-          const labelA = `${monthNamesCap[periodA.month - 1]} ${periodA.year}`;
-          const labelB = `${monthNamesCap[periodB.month - 1]} ${periodB.year}`;
-          await telegramClient.sendPhoto(chatId, chartBuffer, `📊 Comparativa: ${labelA} vs ${labelB}`);
-        } catch (error) {
-          Logger.error("Error generating comparison chart", error instanceof Error ? error : null);
-          await telegramClient.sendMessage(chatId, "❌ No se pudo generar la comparativa. Intentá de nuevo.");
-        }
-
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (message.text.startsWith("/model")) {
-        const parts = message.text.trim().split(/\s+/);
-        if (parts.length === 1) {
-          // Show current model
-          const currentProvider = await userPreferences.getAIProvider(chatId);
-          const providerName = currentProvider === "gemini" ? "Gemini" : "Anthropic Claude";
-          await telegramClient.sendMessage(
-            chatId,
-            "🤖 *Modelo actual:* " +
-              providerName +
-              "\n\nUsá `/model gemini` o `/model anthropic` para cambiar."
-          );
-        } else {
-          // Set model
-          const requestedProvider = parts[1].toLowerCase().trim();
-          if (requestedProvider !== "gemini" && requestedProvider !== "anthropic") {
-            await telegramClient.sendMessage(
-              chatId,
-              "❌ Modelo inválido. Usá `gemini` o `anthropic`.\n\nEjemplo: `/model gemini`"
-            );
-          } else {
-            try {
-              await userPreferences.setAIProvider(chatId, requestedProvider);
-              const providerName = requestedProvider === "gemini" ? "Gemini" : "Anthropic Claude";
-              await telegramClient.sendMessage(
-                chatId,
-                `✅ *Modelo cambiado a:* ${providerName}\n\nEste cambio se aplicará en los próximos mensajes.`
-              );
-            } catch (error) {
-              Logger.error("Error setting AI provider", error);
-              await telegramClient.sendMessage(
-                chatId,
-                `❌ Error al cambiar el modelo: ${error instanceof Error ? error.message : String(error)}`
-              );
-            }
-          }
-        }
+      const handled = await dispatchCommand({
+        chatId,
+        text: message.text,
+        telegramClient,
+        sheetsClient,
+        userPreferences,
+      });
+      if (handled) {
         res.status(200).send("OK");
         return;
       }
@@ -401,139 +144,17 @@ app.post("/webhook", async (req: Request, res: Response) => {
 
     telegramClient.sendChatAction(chatId, "typing");
 
-    let results: TransactionResult[] | undefined;
-    let loadingMessageId: number | null = null;
+    await processIncomingMessage({
+      message,
+      chatId,
+      telegramClient,
+      messageHandlers,
+      audioProcessor,
+      aiClientManager,
+      userPreferences,
+    });
 
-    try {
-      if (message.photo) {
-        loadingMessageId = await telegramClient.sendMessage(chatId, "📸 Paso 1/5: Iniciando análisis...");
-        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 2/5: Descargando imagen de Telegram...");
-
-        results = await messageHandlers.handleImageMessage(message);
-
-        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 3/5: Preparando contexto...");
-        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 4/5: Analizando con IA (esto puede tardar)...");
-        await telegramClient.editMessage(chatId, loadingMessageId!, "📸 Paso 5/5: Procesando resultados...");
-      } else if (message.voice || message.audio) {
-        loadingMessageId = await telegramClient.sendMessage(chatId, "🎤 Paso 1/4: Transcribiendo audio...");
-        await telegramClient.editMessage(chatId, loadingMessageId!, "🎤 Paso 2/4: Descargando audio de Telegram...");
-
-        const audioFile = message.voice || message.audio!;
-        const audioData = await audioProcessor.downloadAudio(audioFile.file_id);
-
-        await telegramClient.editMessage(chatId, loadingMessageId!, "🎤 Paso 3/4: Transcribiendo con IA (esto puede tardar)...");
-        const userProvider = await userPreferences.getAIProvider(chatId);
-        const aiClient = aiClientManager.getClient(userProvider);
-        const textoTranscrito = await aiClient.transcribeAudio(audioData);
-
-        if (!textoTranscrito || textoTranscrito.trim() === "") {
-          throw new Error("No se pudo transcribir el audio. Asegurate de que el audio sea claro y esté en español.");
-        }
-
-        await telegramClient.editMessage(chatId, loadingMessageId!, `🎤 *Transcripción:*\n\n"${textoTranscrito}"\n\nProcesando...`);
-        results = await messageHandlers.handleTextMessage({ ...message, text: textoTranscrito });
-      } else if (message.text) {
-        loadingMessageId = await telegramClient.sendMessage(chatId, "💬 Procesando...");
-        results = await messageHandlers.handleTextMessage(message);
-      } else {
-        await telegramClient.sendMessage(chatId, "❌ Solo puedo procesar texto, imágenes de comprobantes o audios.");
-        res.status(200).send("OK");
-        return;
-      }
-
-      if (!results || results.length === 0) {
-        throw new Error("No result from message handler");
-      }
-
-      const isModification = isModifyingPending(results, chatId);
-      let operationId: string;
-
-      if (isModification) {
-        const updatedId = pendingOperations.updateLastPendingOperation(chatId, results[0]);
-        operationId = updatedId || pendingOperations.createOperation(results, chatId);
-      } else {
-        operationId = pendingOperations.createOperation(results, chatId);
-      }
-
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: "✅ Confirmar", callback_data: `conf_${operationId}` },
-            { text: "🗑️ Cancelar", callback_data: `cancel_${operationId}` },
-          ],
-        ],
-      };
-
-      const confirmationMessage = results.length === 1
-        ? MessageBuilder.buildConfirmationMessage(results[0])
-        : MessageBuilder.buildMultiConfirmationMessage(results);
-
-      if (loadingMessageId) {
-        await telegramClient.editMessage(chatId, loadingMessageId, confirmationMessage, keyboard);
-      } else {
-        await telegramClient.sendMessage(chatId, confirmationMessage, keyboard);
-      }
-
-      res.status(200).send("OK");
-    } catch (error) {
-      Logger.error("Error processing message", error instanceof Error ? error : null);
-
-      let errorText = "❌ Error en procesamiento";
-
-      if (error instanceof Error) {
-        // Handle Gemini API rate limit errors
-        if (
-          error.message.includes("429") ||
-          error.message.includes("RESOURCE_EXHAUSTED") ||
-          error.message.includes("quota")
-        ) {
-          const retryMatch = error.message.match(/retry in ([\d.]+)s/i);
-          const retrySeconds = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : null;
-
-          if (retrySeconds) {
-            errorText = `⚠️ *Límite de cuota alcanzado*\n\nHas excedido el límite diario de la API de Gemini (20 solicitudes/día en el plan gratuito).\n\nPor favor, intentá de nuevo en ${retrySeconds} segundos.\n\n💡 *Sugerencia:* Considerá actualizar a un plan de pago para aumentar el límite.`;
-          } else {
-            errorText = `⚠️ *Límite de cuota alcanzado*\n\nHas excedido el límite diario de la API de Gemini (20 solicitudes/día en el plan gratuito).\n\nPor favor, intentá mañana o actualizá tu plan.`;
-          }
-        } else {
-          // For other errors, show a truncated, safe message
-          const safeMessage = error.message.substring(0, 200).replace(/[*_`[\]]/g, "");
-          errorText = `❌ Error:\n${safeMessage}`;
-        }
-      }
-
-      // Telegram messages have a 4096 character limit, ensure we don't exceed it
-      if (errorText.length > 4000) {
-        errorText = errorText.substring(0, 4000) + "...";
-      }
-
-      try {
-        if (loadingMessageId) {
-          await telegramClient.editMessage(chatId, loadingMessageId, errorText);
-        } else {
-          await telegramClient.sendMessage(chatId, errorText);
-        }
-      } catch (telegramError) {
-        // If editing fails, try sending a new message
-        Logger.error(
-          "Error sending error message to Telegram",
-          telegramError instanceof Error ? telegramError : null
-        );
-        try {
-          await telegramClient.sendMessage(
-            chatId,
-            "❌ Ocurrió un error al procesar tu mensaje. Por favor, intentá de nuevo."
-          );
-        } catch (finalError) {
-          Logger.error(
-            "Failed to send fallback error message",
-            finalError instanceof Error ? finalError : null
-          );
-        }
-      }
-
-      res.status(200).send("OK");
-    }
+    res.status(200).send("OK");
   } catch (error) {
     Logger.error("Error in webhook handler", error instanceof Error ? error : null);
     res.status(500).json({ error: "Internal server error" });
