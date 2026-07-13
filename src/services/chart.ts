@@ -102,4 +102,77 @@ export class ChartService {
       throw error;
     }
   }
+
+  static async generateComparisonChart(
+    periodA: { year: number; month: number },
+    periodB: { year: number; month: number },
+    gastosA: { macro_categoria: string; monto: number }[],
+    gastosB: { macro_categoria: string; monto: number }[]
+  ): Promise<Buffer> {
+    const totalsA = new Map<string, number>();
+    for (const g of gastosA) {
+      totalsA.set(g.macro_categoria, (totalsA.get(g.macro_categoria) ?? 0) + g.monto);
+    }
+    const totalsB = new Map<string, number>();
+    for (const g of gastosB) {
+      totalsB.set(g.macro_categoria, (totalsB.get(g.macro_categoria) ?? 0) + g.monto);
+    }
+
+    const categorias = [...new Set([...totalsA.keys(), ...totalsB.keys()])].sort(
+      (a, b) =>
+        (totalsA.get(b) ?? 0) + (totalsB.get(b) ?? 0) - ((totalsA.get(a) ?? 0) + (totalsB.get(a) ?? 0))
+    );
+
+    const labelA = `${MONTH_NAMES[periodA.month - 1]} ${periodA.year}`;
+    const labelB = `${MONTH_NAMES[periodB.month - 1]} ${periodB.year}`;
+
+    const chartConfig = {
+      type: "bar",
+      data: {
+        labels: categorias,
+        datasets: [
+          {
+            label: labelA,
+            data: categorias.map((c) => Math.round(totalsA.get(c) ?? 0)),
+            backgroundColor: "rgba(99, 132, 255, 0.75)",
+          },
+          {
+            label: labelB,
+            data: categorias.map((c) => Math.round(totalsB.get(c) ?? 0)),
+            backgroundColor: "rgba(255, 159, 64, 0.75)",
+          },
+        ],
+      },
+      options: {
+        title: { display: true, text: `${labelA} vs ${labelB}`, fontSize: 16 },
+        legend: { display: true, position: "top" },
+        scales: {
+          yAxes: [
+            {
+              scaleLabel: { display: true, labelString: "ARS" },
+              ticks: { beginAtZero: true },
+            },
+          ],
+        },
+      },
+    };
+
+    try {
+      const response = await axios.post<ArrayBuffer>(
+        "https://quickchart.io/chart",
+        { chart: chartConfig, width: 800, height: 400, backgroundColor: "white" },
+        { responseType: "arraybuffer", timeout: 15000 }
+      );
+      return Buffer.from(response.data);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const body = error.response?.data
+          ? Buffer.from(error.response.data as ArrayBuffer).toString("utf8").substring(0, 300)
+          : "no body";
+        Logger.error(`QuickChart error ${status}: ${body}`, null);
+      }
+      throw error;
+    }
+  }
 }

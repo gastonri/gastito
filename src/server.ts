@@ -194,6 +194,8 @@ app.post("/webhook", async (req: Request, res: Response) => {
           "`/ayuda` — muestra este mensaje\n" +
           "`/resumen` — gastos del mes agrupados por categoría\n" +
           "`/grafico` — gráfico de barras con gasto diario y acumulado del mes\n" +
+          "`/comparar` — compara gastos por categoría del mes actual vs. el anterior\n" +
+          "`/comparar <mes>` o `/comparar <mes1> <mes2>` — compara meses específicos\n" +
           "`/contexto` — muestra el último registro confirmado\n" +
           "`/model` — muestra el modelo de IA actual\n" +
           "`/model gemini` o `/model anthropic` — cambia el modelo\n" +
@@ -271,6 +273,84 @@ app.post("/webhook", async (req: Request, res: Response) => {
         } catch (error) {
           Logger.error("Error generating chart", error instanceof Error ? error : null);
           await telegramClient.sendMessage(chatId, "❌ No se pudo generar el gráfico. Intentá de nuevo.");
+        }
+
+        res.status(200).send("OK");
+        return;
+      }
+
+      if (message.text.startsWith("/comparar")) {
+        const monthNames = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        const monthNamesCap = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        const args = message.text.trim().split(/\s+/).slice(1).map((p) => p.toLowerCase());
+
+        const resolveMonth = (name: string): { year: number; month: number } | null => {
+          const idx = monthNames.indexOf(name);
+          if (idx === -1) return null;
+          const month = idx + 1;
+          const year = month > currentMonth ? currentYear - 1 : currentYear;
+          return { year, month };
+        };
+
+        const previousOf = (p: { year: number; month: number }) =>
+          p.month === 1 ? { year: p.year - 1, month: 12 } : { year: p.year, month: p.month - 1 };
+
+        let periodA: { year: number; month: number };
+        let periodB: { year: number; month: number };
+
+        if (args.length === 0) {
+          periodA = { year: currentYear, month: currentMonth };
+          periodB = previousOf(periodA);
+        } else if (args.length === 1) {
+          const resolved = resolveMonth(args[0]);
+          if (!resolved) {
+            await telegramClient.sendMessage(
+              chatId,
+              "❌ Mes inválido. Ejemplo: `/comparar julio` o `/comparar julio junio`"
+            );
+            res.status(200).send("OK");
+            return;
+          }
+          periodA = resolved;
+          periodB = previousOf(periodA);
+        } else {
+          const resolvedA = resolveMonth(args[0]);
+          const resolvedB = resolveMonth(args[1]);
+          if (!resolvedA || !resolvedB) {
+            await telegramClient.sendMessage(
+              chatId,
+              "❌ Mes inválido. Ejemplo: `/comparar julio junio`"
+            );
+            res.status(200).send("OK");
+            return;
+          }
+          periodA = resolvedA;
+          periodB = resolvedB;
+        }
+
+        telegramClient.sendChatAction(chatId, "upload_photo");
+        try {
+          const [gastosA, gastosB] = await Promise.all([
+            sheetsClient.getGastosDelMes(periodA.year, periodA.month),
+            sheetsClient.getGastosDelMes(periodB.year, periodB.month),
+          ]);
+
+          if (gastosA.length === 0 && gastosB.length === 0) {
+            await telegramClient.sendMessage(chatId, "📊 No hay gastos registrados en ninguno de los dos meses.");
+            res.status(200).send("OK");
+            return;
+          }
+
+          const chartBuffer = await ChartService.generateComparisonChart(periodA, periodB, gastosA, gastosB);
+          const labelA = `${monthNamesCap[periodA.month - 1]} ${periodA.year}`;
+          const labelB = `${monthNamesCap[periodB.month - 1]} ${periodB.year}`;
+          await telegramClient.sendPhoto(chatId, chartBuffer, `📊 Comparativa: ${labelA} vs ${labelB}`);
+        } catch (error) {
+          Logger.error("Error generating comparison chart", error instanceof Error ? error : null);
+          await telegramClient.sendMessage(chatId, "❌ No se pudo generar la comparativa. Intentá de nuevo.");
         }
 
         res.status(200).send("OK");
