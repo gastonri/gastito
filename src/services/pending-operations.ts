@@ -1,55 +1,105 @@
+import Redis from "ioredis";
 import { TransactionResult } from "../types";
 import { Logger } from "../utils/logger";
 import { randomUUID } from "crypto";
+import { config } from "../config";
+
+const TTL_SECONDS = 30 * 60; // 30 minutes
 
 interface StoredOperation {
   data: TransactionResult[];
-  expiresAt: number;
   chatId?: number;
 }
 
 class PendingOperationsManager {
-  private storage: Map<string, StoredOperation> = new Map();
-  private lastPendingByChat: Map<number, string> = new Map();
-  private readonly TTL_MS = 30 * 60 * 1000; // 30 minutes
+  private redis: Redis;
 
-  createOperation(data: TransactionResult[], chatId?: number): string {
-    const operationId = randomUUID();
-    this.storage.set(operationId, {
-      data,
-      expiresAt: Date.now() + this.TTL_MS,
-      chatId,
+  constructor() {
+    this.redis = this.createRedisClient();
+  }
+
+  private createRedisClient(): Redis {
+    const client = new Redis(config.redis.url, {
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => {
+        if (times > 3) {
+          Logger.error("Redis connection failed after 3 retries (pending operations)");
+          return null;
+        }
+        return Math.min(times * 100, 3000);
+      },
+      lazyConnect: true,
     });
 
-    if (chatId) {
-      this.lastPendingByChat.set(chatId, operationId);
+    client.on("error", (err) => {
+      Logger.error(
+        `Redis error (pending operations): ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? err : null
+      );
+    });
+
+    return client;
+  }
+
+  private async ensureConnected(): Promise<void> {
+    const status = this.redis.status;
+
+    if (status === "ready" || status === "connect" || status === "connecting" || status === "reconnecting") {
+      return;
     }
 
-    Logger.log(`Created pending operation: ${operationId} (${data.length} item(s))${chatId ? ` for chat ${chatId}` : ""}`);
+    if (status === "end") {
+      this.redis = this.createRedisClient();
+    }
+
+    await this.redis.connect();
+  }
+
+  private operationKey(operationId: string): string {
+    return `pending_op:${operationId}`;
+  }
+
+  private lastByChatKey(chatId: number): string {
+    return `pending_op:last:${chatId}`;
+  }
+
+  async createOperation(data: TransactionResult[], chatId?: number): Promise<string> {
+    await this.ensureConnected();
+    const operationId = randomUUID();
+    const stored: StoredOperation = { data, chatId };
+
+    await this.redis.setex(this.operationKey(operationId), TTL_SECONDS, JSON.stringify(stored));
+    if (chatId) {
+      await this.redis.setex(this.lastByChatKey(chatId), TTL_SECONDS, operationId);
+    }
+
+    Logger.log(
+      `Created pending operation: ${operationId} (${data.length} item(s))${chatId ? ` for chat ${chatId}` : ""}`
+    );
     return operationId;
   }
 
-  getOperation(operationId: string): TransactionResult[] | null {
-    const stored = this.storage.get(operationId);
+  async getOperation(operationId: string): Promise<TransactionResult[] | null> {
+    await this.ensureConnected();
+    const raw = await this.redis.get(this.operationKey(operationId));
+    if (!raw) return null;
 
-    if (!stored) return null;
-
-    if (Date.now() > stored.expiresAt) {
-      this.storage.delete(operationId);
-      return null;
-    }
-
+    const stored = JSON.parse(raw) as StoredOperation;
     return stored.data;
   }
 
-  deleteOperation(operationId: string): void {
-    const operation = this.storage.get(operationId);
-    this.storage.delete(operationId);
+  async deleteOperation(operationId: string): Promise<void> {
+    await this.ensureConnected();
+    const raw = await this.redis.get(this.operationKey(operationId));
+    await this.redis.del(this.operationKey(operationId));
 
-    if (operation?.chatId) {
-      const lastOpId = this.lastPendingByChat.get(operation.chatId);
-      if (lastOpId === operationId) {
-        this.lastPendingByChat.delete(operation.chatId);
+    if (raw) {
+      const stored = JSON.parse(raw) as StoredOperation;
+      if (stored.chatId) {
+        const lastOpId = await this.redis.get(this.lastByChatKey(stored.chatId));
+        if (lastOpId === operationId) {
+          await this.redis.del(this.lastByChatKey(stored.chatId));
+        }
       }
     }
 
@@ -57,45 +107,37 @@ class PendingOperationsManager {
   }
 
   // Returns the single pending item only for single-item batches (used for modification flow)
-  getLastPendingOperation(chatId: number): TransactionResult | null {
-    const operationId = this.lastPendingByChat.get(chatId);
+  async getLastPendingOperation(chatId: number): Promise<TransactionResult | null> {
+    await this.ensureConnected();
+    const operationId = await this.redis.get(this.lastByChatKey(chatId));
     if (!operationId) return null;
 
-    const batch = this.getOperation(operationId);
+    const batch = await this.getOperation(operationId);
     return batch?.length === 1 ? batch[0] : null;
   }
 
-  updateLastPendingOperation(chatId: number, newData: TransactionResult): string | null {
-    const operationId = this.lastPendingByChat.get(chatId);
+  async updateLastPendingOperation(chatId: number, newData: TransactionResult): Promise<string> {
+    await this.ensureConnected();
+    const operationId = await this.redis.get(this.lastByChatKey(chatId));
     if (!operationId) return this.createOperation([newData], chatId);
 
-    const existing = this.storage.get(operationId);
-    if (existing && Date.now() < existing.expiresAt) {
-      existing.data = [newData];
-      existing.expiresAt = Date.now() + this.TTL_MS;
-      Logger.log(`Updated pending operation: ${operationId} for chat ${chatId}`);
-      return operationId;
-    } else {
-      this.lastPendingByChat.delete(chatId);
+    const exists = await this.redis.exists(this.operationKey(operationId));
+    if (!exists) {
+      await this.redis.del(this.lastByChatKey(chatId));
       return this.createOperation([newData], chatId);
     }
+
+    const stored: StoredOperation = { data: [newData], chatId };
+    await this.redis.setex(this.operationKey(operationId), TTL_SECONDS, JSON.stringify(stored));
+    await this.redis.setex(this.lastByChatKey(chatId), TTL_SECONDS, operationId);
+
+    Logger.log(`Updated pending operation: ${operationId} for chat ${chatId}`);
+    return operationId;
   }
 
-  cleanup(): void {
-    const now = Date.now();
-    let cleaned = 0;
-    for (const [key, stored] of this.storage.entries()) {
-      if (now > stored.expiresAt) {
-        this.storage.delete(key);
-        cleaned++;
-      }
-    }
-    if (cleaned > 0) {
-      Logger.log(`Cleaned up ${cleaned} expired pending operations`);
-    }
+  async disconnect(): Promise<void> {
+    await this.redis.quit();
   }
 }
 
 export const pendingOperations = new PendingOperationsManager();
-
-setInterval(() => { pendingOperations.cleanup(); }, 10 * 60 * 1000);

@@ -33,32 +33,46 @@ export class MessageBuilder {
     return mensaje;
   }
 
+  // Telegram's sendMessage/editMessageText hard-cap text at 4096 chars; stay under it
+  // with margin for the footer/truncation note so large receipts never fail to send.
+  private static readonly MAX_MESSAGE_LENGTH = 4000;
+
   static buildMultiConfirmationMessage(gastos: TransactionResult[]): string {
     const total = gastos.reduce((sum, g) => sum + (g.datos.monto || 0), 0);
     const moneda = gastos[0]?.datos.moneda || "ARS";
     const sep = "━━━━━━━━━━━━━━━";
+    const footer = `${sep}\nTotal: $${total} ${moneda}`;
 
     let mensaje = `🤔 *¿Confirmás estos ${gastos.length} gastos?*\n`;
-    gastos.forEach((g) => {
+    let shown = 0;
+
+    for (const g of gastos) {
       const d = g.datos;
       const miParte = d.mi_parte !== undefined ? d.mi_parte : 100;
       const extras: string[] = [];
       if (miParte < 100) extras.push(`${miParte}% mi parte`);
       if (d.cuotas && d.cuotas > 1) extras.push(`${d.cuotas} cuotas`);
 
-      mensaje += `${sep}\n`;
-      mensaje += `🧾 ${escapeMarkdown(d.descripcion)}\n`;
-      mensaje += `   $${d.monto} ${d.moneda || "ARS"}`;
-      if (d.fecha) mensaje += ` · ${d.fecha}`;
-      if (d.persona) mensaje += ` · ${escapeMarkdown(d.persona)}`;
-      mensaje += `\n`;
-      mensaje += `   ${d.macro_categoria} → ${d.subcategoria}`;
-      if (extras.length) mensaje += ` · ${extras.join(" · ")}`;
-      mensaje += `\n`;
-    });
-    mensaje += `${sep}\n`;
-    mensaje += `Total: $${total} ${moneda}`;
+      let item = `${sep}\n`;
+      item += `🧾 ${escapeMarkdown(d.descripcion)}\n`;
+      item += `   $${d.monto} ${d.moneda || "ARS"}`;
+      if (d.fecha) item += ` · ${d.fecha}`;
+      if (d.persona) item += ` · ${escapeMarkdown(d.persona)}`;
+      item += `\n`;
+      item += `   ${d.macro_categoria} → ${d.subcategoria}`;
+      if (extras.length) item += ` · ${extras.join(" · ")}`;
+      item += `\n`;
 
+      if (mensaje.length + item.length + footer.length > this.MAX_MESSAGE_LENGTH) {
+        mensaje += `${sep}\n… y ${gastos.length - shown} más (se guardan igual al confirmar)\n`;
+        break;
+      }
+
+      mensaje += item;
+      shown++;
+    }
+
+    mensaje += footer;
     return mensaje;
   }
 
@@ -77,12 +91,24 @@ export class MessageBuilder {
 
     const total = saved.reduce((sum, g) => sum + (g.datos.monto || 0), 0);
     const moneda = saved[0]?.datos.moneda || "ARS";
+    const footer = `\nTotal: $${total} ${moneda}` + failureNote;
+
     let msg = `✅ *${saved.length} gastos anotados*\n\n`;
-    saved.forEach((g) => {
-      msg += `${escapeMarkdown(g.datos.descripcion)} · $${g.datos.monto} ${g.datos.moneda || "ARS"}\n`;
-    });
-    msg += `\nTotal: $${total} ${moneda}`;
-    return msg + failureNote;
+    let shown = 0;
+
+    for (const g of saved) {
+      const line = `${escapeMarkdown(g.datos.descripcion)} · $${g.datos.monto} ${g.datos.moneda || "ARS"}\n`;
+
+      if (msg.length + line.length + footer.length > this.MAX_MESSAGE_LENGTH) {
+        msg += `… y ${saved.length - shown} más\n`;
+        break;
+      }
+
+      msg += line;
+      shown++;
+    }
+
+    return msg + footer;
   }
 
   static buildContextSummary(context: { tipo: string; datos: import("../types").TransactionData }): string {

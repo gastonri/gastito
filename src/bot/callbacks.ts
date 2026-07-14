@@ -44,7 +44,7 @@ export class CallbackHandlers {
     data: string
   ): Promise<void> {
     const operationId = data.replace("conf_", "");
-    const storedData = pendingOperations.getOperation(operationId);
+    const storedData = await pendingOperations.getOperation(operationId);
 
     if (!storedData) {
       await this.telegramClient.editMessage(
@@ -77,7 +77,7 @@ export class CallbackHandlers {
       return;
     }
 
-    pendingOperations.deleteOperation(operationId);
+    await pendingOperations.deleteOperation(operationId);
 
     contextManager.setContext(chatId, {
       tipo: saved[saved.length - 1].tipo,
@@ -104,7 +104,7 @@ export class CallbackHandlers {
     data: string
   ): Promise<void> {
     const operationId = data.replace("cancel_", "");
-    pendingOperations.deleteOperation(operationId);
+    await pendingOperations.deleteOperation(operationId);
 
     // Delete session (explicit termination)
     await sessionManager.deleteSession(chatId);

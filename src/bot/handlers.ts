@@ -34,7 +34,7 @@ export class MessageHandlers {
     const chatId = message.chat.id;
 
     const contextoPrevio = contextManager.getContext(chatId);
-    const operacionPendiente = pendingOperations.getLastPendingOperation(chatId);
+    const operacionPendiente = await pendingOperations.getLastPendingOperation(chatId);
     const sheetsConfig = await this.sheetsClient.getConfig();
 
     const prompt = PromptBuilder.buildTextPrompt(
@@ -126,7 +126,7 @@ export class MessageHandlers {
     }
 
     const contextoPrevio = contextManager.getContext(chatId);
-    const operacionPendiente = pendingOperations.getLastPendingOperation(chatId);
+    const operacionPendiente = await pendingOperations.getLastPendingOperation(chatId);
     const sheetsConfig = await this.sheetsClient.getConfig();
 
     const prompt = PromptBuilder.buildTextPrompt(

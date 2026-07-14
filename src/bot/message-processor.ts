@@ -19,9 +19,9 @@ export interface MessageProcessorContext {
 }
 
 /** Checks if a single-result response is modifying an existing pending operation. */
-function isModifyingPending(results: TransactionResult[], chatId: number): boolean {
+async function isModifyingPending(results: TransactionResult[], chatId: number): Promise<boolean> {
   if (results.length !== 1) return false;
-  const existingPending = pendingOperations.getLastPendingOperation(chatId);
+  const existingPending = await pendingOperations.getLastPendingOperation(chatId);
   if (!existingPending) return false;
 
   const result = results[0];
@@ -130,14 +130,13 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       throw new Error("No result from message handler");
     }
 
-    const isModification = isModifyingPending(results, chatId);
+    const isModification = await isModifyingPending(results, chatId);
     let operationId: string;
 
     if (isModification) {
-      const updatedId = pendingOperations.updateLastPendingOperation(chatId, results[0]);
-      operationId = updatedId || pendingOperations.createOperation(results, chatId);
+      operationId = await pendingOperations.updateLastPendingOperation(chatId, results[0]);
     } else {
-      operationId = pendingOperations.createOperation(results, chatId);
+      operationId = await pendingOperations.createOperation(results, chatId);
     }
 
     const keyboard = {

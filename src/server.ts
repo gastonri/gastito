@@ -10,6 +10,7 @@ import { SheetsClient } from "./sheets/client";
 import { ImageProcessor } from "./services/image-processor";
 import { AudioProcessor } from "./services/audio-processor";
 import { sessionManager } from "./services/session-manager";
+import { pendingOperations } from "./services/pending-operations";
 import { ConversationHandler } from "./services/conversation-handler";
 import { initializeUserPreferences } from "./services/user-preferences";
 import { dispatchCommand } from "./bot/commands";
@@ -194,12 +195,14 @@ async function startServer() {
 process.on("SIGTERM", async () => {
   Logger.log("SIGTERM received, shutting down...");
   await sessionManager.disconnect();
+  await pendingOperations.disconnect();
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
   Logger.log("SIGINT received, shutting down...");
   await sessionManager.disconnect();
+  await pendingOperations.disconnect();
   process.exit(0);
 });
 
