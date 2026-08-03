@@ -1,16 +1,7 @@
 import { Logger } from "../../utils/logger";
 import { ChartService } from "../../services/chart";
-import { MONTH_NAMES_ES, MONTH_NAMES_ES_CAP } from "../../utils/months";
+import { MONTH_NAMES_ES_CAP, Period, previousPeriod, resolveMonthName } from "../../utils/months";
 import { CommandHandler } from "./types";
-
-interface Period {
-  year: number;
-  month: number;
-}
-
-function previousOf(p: Period): Period {
-  return p.month === 1 ? { year: p.year - 1, month: 12 } : { year: p.year, month: p.month - 1 };
-}
 
 export const handleComparar: CommandHandler = async ({
   chatId,
@@ -27,20 +18,15 @@ export const handleComparar: CommandHandler = async ({
     .slice(1)
     .map((p) => p.toLowerCase());
 
-  const resolveMonth = (name: string): Period | null => {
-    const idx = MONTH_NAMES_ES.indexOf(name);
-    if (idx === -1) return null;
-    const month = idx + 1;
-    const year = month > currentMonth ? currentYear - 1 : currentYear;
-    return { year, month };
-  };
+  const resolveMonth = (name: string): Period | null =>
+    resolveMonthName(name, currentMonth, currentYear);
 
   let periodA: Period;
   let periodB: Period;
 
   if (args.length === 0) {
     periodA = { year: currentYear, month: currentMonth };
-    periodB = previousOf(periodA);
+    periodB = previousPeriod(periodA);
   } else if (args.length === 1) {
     const resolved = resolveMonth(args[0]);
     if (!resolved) {
@@ -51,7 +37,7 @@ export const handleComparar: CommandHandler = async ({
       return;
     }
     periodA = resolved;
-    periodB = previousOf(periodA);
+    periodB = previousPeriod(periodA);
   } else {
     const resolvedA = resolveMonth(args[0]);
     const resolvedB = resolveMonth(args[1]);

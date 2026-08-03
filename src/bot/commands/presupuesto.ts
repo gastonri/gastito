@@ -1,15 +1,25 @@
-import { MONTH_NAMES_ES } from "../../utils/months";
+import { MONTH_NAMES_ES_CAP, parsePeriodArgs } from "../../utils/months";
 import { CommandHandler } from "./types";
 
 export const handlePresupuesto: CommandHandler = async ({
   chatId,
+  text,
   telegramClient,
   sheetsClient,
 }) => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const monthName = MONTH_NAMES_ES[month - 1];
+  const args = text.trim().split(/\s+/).slice(1);
+  const period = parsePeriodArgs(args);
+
+  if (!period) {
+    await telegramClient.sendMessage(
+      chatId,
+      "❌ Mes inválido. Ejemplo: `/presupuesto julio` o `/presupuesto julio 2025`"
+    );
+    return;
+  }
+
+  const { year, month } = period;
+  const monthName = `${MONTH_NAMES_ES_CAP[month - 1]} ${year}`;
 
   try {
     const [presupuestos, gastos] = await Promise.all([

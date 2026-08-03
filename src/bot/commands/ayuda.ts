@@ -8,10 +8,12 @@ export const handleAyuda: CommandHandler = async ({ chatId, telegramClient }) =>
       "*Comandos*\n" +
       "`/ayuda` — muestra este mensaje\n" +
       "`/resumen` — gastos del mes agrupados por categoría\n" +
+      "`/resumen <mes>` o `/resumen <mes> <año>` — resumen de un mes específico\n" +
       "`/grafico` — gráfico de barras con gasto diario y acumulado del mes\n" +
       "`/comparar` — compara gastos por categoría del mes actual vs. el anterior\n" +
       "`/comparar <mes>` o `/comparar <mes1> <mes2>` — compara meses específicos\n" +
       "`/presupuesto` — gasto del mes vs. presupuesto por categoría\n" +
+      "`/presupuesto <mes>` o `/presupuesto <mes> <año>` — presupuesto de un mes específico\n" +
       "`/contexto` — muestra el último registro confirmado\n" +
       "`/model` — muestra el modelo de IA actual\n" +
       "`/model gemini` o `/model anthropic` — cambia el modelo\n" +
