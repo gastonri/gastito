@@ -439,6 +439,25 @@ async function setupConfig(sheets: sheets_v4.Sheets, sheetId: number) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+interface SheetSetupResult {
+  name: string;
+  ok: boolean;
+  error?: string;
+}
+
+async function runSetupStep(name: string, fn: () => Promise<void>): Promise<SheetSetupResult> {
+  console.log(`\n⚙️  Configurando ${name}...`);
+  try {
+    await fn();
+    console.log(`   ✅ ${name} configurada`);
+    return { name, ok: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`   ❌ Error configurando ${name}: ${message}`);
+    return { name, ok: false, error: message };
+  }
+}
+
 async function main() {
   console.log("🚀 Gastito — setup de spreadsheet\n");
 
@@ -460,29 +479,52 @@ async function main() {
 
   console.log(`📋 Spreadsheet: "${spreadsheet.data.properties?.title}"`);
   const existingNames = existing.map((s) => s.properties?.title).filter(Boolean);
-  console.log(`   Hojas existentes: ${existingNames.length ? existingNames.join(", ") : "ninguna"}\n`);
+  console.log(`   Hojas existentes: ${existingNames.length ? existingNames.join(", ") : "ninguna"}`);
 
-  console.log("📝 Hojas:");
-  const gastosId = await getOrCreateSheet(sheets, "GASTOS", existing);
-  const ingresosId = await getOrCreateSheet(sheets, "INGRESOS", existing);
-  const configId = await getOrCreateSheet(sheets, "CONFIG", existing);
+  const results: SheetSetupResult[] = [];
 
-  console.log("\n⚙️  Configurando GASTOS...");
-  await setupGastos(sheets, gastosId);
+  results.push(
+    await runSetupStep("GASTOS", async () => {
+      const gastosId = await getOrCreateSheet(sheets, "GASTOS", existing);
+      await setupGastos(sheets, gastosId);
+    })
+  );
 
-  console.log("⚙️  Configurando INGRESOS...");
-  await setupIngresos(sheets, ingresosId);
+  results.push(
+    await runSetupStep("INGRESOS", async () => {
+      const ingresosId = await getOrCreateSheet(sheets, "INGRESOS", existing);
+      await setupIngresos(sheets, ingresosId);
+    })
+  );
 
-  console.log("⚙️  Configurando CONFIG...");
-  await setupConfig(sheets, configId);
+  results.push(
+    await runSetupStep("CONFIG", async () => {
+      const configId = await getOrCreateSheet(sheets, "CONFIG", existing);
+      await setupConfig(sheets, configId);
+    })
+  );
 
+  const succeeded = results.filter((r) => r.ok);
+  const failed = results.filter((r) => !r.ok);
   const totalSubs = Object.values(CATEGORIES).reduce((n, subs) => n + subs.length, 0);
-  console.log("\n✅ Setup completo!");
+
+  console.log(failed.length ? "\n⚠️  Setup terminado con errores" : "\n✅ Setup completo!");
+  console.log(`   OK: ${succeeded.length ? succeeded.map((r) => r.name).join(", ") : "ninguna"}`);
+  if (failed.length) {
+    console.log(`   Con errores: ${failed.map((r) => r.name).join(", ")}`);
+    for (const r of failed) {
+      console.log(`     - ${r.name}: ${r.error}`);
+    }
+  }
   console.log(`   Columnas GASTOS: ${GASTOS_HEADERS.join(", ")}`);
   console.log(`   Columnas INGRESOS: ${INGRESOS_HEADERS.join(", ")}`);
   console.log(`   Categorías: ${Object.keys(CATEGORIES).length} macro (${totalSubs} subcategorías)`);
   console.log(`\n   Abrí el spreadsheet para verificar:`);
   console.log(`   https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}`);
+
+  if (failed.length) {
+    process.exit(1);
+  }
 }
 
 main().catch((e) => {
