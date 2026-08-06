@@ -52,12 +52,22 @@ export interface TelegramCallbackQuery {
 }
 
 // Transaction Types
-export type TransactionType = "GASTO";
+export type TransactionType = "GASTO" | "INGRESO";
 export type Moneda = "ARS" | "USD";
 export type Confianza = "ALTA" | "MEDIA" | "BAJA";
 
 // Valid options arrays (use these for prompts and validation)
 export const MONEDA_OPTIONS: readonly Moneda[] = ["ARS", "USD"] as const;
+export const INGRESO_CATEGORIAS: readonly string[] = [
+  "Sueldo",
+  "Freelance/Changas",
+  "Alquiler cobrado",
+  "Inversiones/Intereses",
+  "Reembolso",
+  "Regalo",
+  "Venta",
+  "Otro",
+] as const;
 
 export interface TransactionData {
   fecha?: string;
@@ -65,6 +75,7 @@ export interface TransactionData {
   descripcion?: string;
   macro_categoria?: string;
   subcategoria?: string;
+  categoria?: string;
   monto?: number;
   moneda?: Moneda;
   cuotas?: number;

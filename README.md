@@ -24,6 +24,13 @@ El script `bun run setup` crea automáticamente las hojas necesarias.
 | A: fecha | B: persona | C: descripcion | D: macro_categoria | E: subcategoria | F: monto | G: moneda | H: cuotas | I: n_cuota | J: imp_mensual | K: mi_parte_% | L: link | M: notas |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 
+### Hoja INGRESOS
+
+| A: fecha | B: persona | C: descripcion | D: categoria | E: monto | F: moneda | G: link | H: notas |
+|---|---|---|---|---|---|---|---|
+
+Categorías de ingreso: Sueldo, Freelance/Changas, Alquiler cobrado, Inversiones/Intereses, Reembolso, Regalo, Venta, Otro.
+
 ### Hoja CONFIG
 
 | A: macro_categoria | B: subcategoria |

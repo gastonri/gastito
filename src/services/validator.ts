@@ -79,9 +79,35 @@ export class Validator {
     }
   }
 
+  static validateIngreso(data: TransactionData): void {
+    if (!data.descripcion || data.descripcion.trim() === "") {
+      throw new ValidationError("El campo 'descripcion' es requerido para un INGRESO");
+    }
+    if (!data.monto || isNaN(data.monto) || data.monto <= 0) {
+      throw new ValidationError(
+        `El campo 'monto' debe ser un número positivo. Valor recibido: ${data.monto}`
+      );
+    }
+    if (!data.categoria || data.categoria.trim() === "") {
+      throw new ValidationError("El campo 'categoria' es requerido para un INGRESO");
+    }
+
+    this.validateDate(data.fecha);
+
+    const monedasValidas = ["ARS", "USD"];
+    const moneda = data.moneda || "ARS";
+    if (!monedasValidas.includes(moneda)) {
+      throw new ValidationError(
+        `Moneda inválida. Valores permitidos: ARS, USD. Recibido: ${moneda}`
+      );
+    }
+  }
+
   static validateTransaction(result: TransactionResult): void {
     if (result.tipo === "GASTO") {
       this.validateGasto(result.datos);
+    } else if (result.tipo === "INGRESO") {
+      this.validateIngreso(result.datos);
     } else {
       const tipo: string = result.tipo;
       throw new ValidationError(`Tipo de operación desconocido: ${tipo}`);
@@ -114,7 +140,7 @@ export class Validator {
   }
 }
 
-import { MONEDA_OPTIONS } from "../types";
+import { MONEDA_OPTIONS, INGRESO_CATEGORIAS } from "../types";
 import { extractTextWithoutEmoji } from "../utils/text";
 
 /**
@@ -141,6 +167,19 @@ export function mapTransactionIndices(
   config: ConfigData
 ): TransactionResult {
   const datos = { ...result.datos };
+
+  if (result.tipo === "INGRESO") {
+    const categoriaIndex = datos.categoria as unknown as number;
+    datos.categoria = mapIndexToValue(categoriaIndex, INGRESO_CATEGORIAS);
+    Logger.log(`Mapped categoria: ${categoriaIndex} → "${datos.categoria}"`);
+
+    const monedaIndex = datos.moneda as unknown as number;
+    datos.moneda = mapIndexToValue(monedaIndex, MONEDA_OPTIONS);
+    Logger.log(`Mapped moneda: ${monedaIndex} → "${datos.moneda}"`);
+
+    return { ...result, datos };
+  }
+
   const macroKeys = Object.keys(config.categoriasMap);
 
   const macroIndex = datos.macro_categoria as unknown as number;

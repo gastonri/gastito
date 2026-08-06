@@ -286,6 +286,53 @@ export class SheetsClient {
     }
   }
 
+  async writeIngreso(data: TransactionData): Promise<void> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const sheetName = "INGRESOS";
+      const lastRow = await this.findLastRowWithData(sheetName);
+      const newRow = lastRow + 1;
+
+      let fecha: Date;
+      if (typeof data.fecha === "string") {
+        const parsedDate = parseDate(data.fecha);
+        fecha = parsedDate || new Date();
+      } else {
+        fecha = new Date();
+      }
+
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A${newRow}:K${newRow}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            [
+              formatDateForSheets(fecha),
+              (data.persona || "").trim(),
+              (data.descripcion || "").trim(),
+              (data.categoria || "").trim(),
+              parseFloat(String(data.monto || 0)),
+              data.moneda || "ARS",
+              (data.link || "").trim(),
+              (data.notas || "").trim(),
+              fecha.getFullYear(),
+              fecha.getMonth() + 1,
+              fecha.getDate(),
+            ],
+          ],
+        },
+      });
+
+      Logger.log(`✅ INGRESO written successfully in row ${newRow}`);
+    } catch (error) {
+      Logger.error("Error writing INGRESO to Sheets", error);
+      throw new SheetsAPIError(`Failed to write INGRESO: ${getErrorMessage(error)}`);
+    }
+  }
+
   async getGastosPorDiaDelMes(
     year: number,
     month: number

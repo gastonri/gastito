@@ -64,7 +64,11 @@ export class CallbackHandlers {
     for (const gasto of storedData) {
       try {
         Validator.validateTransaction(gasto);
-        await this.sheetsClient.writeGasto(gasto.datos);
+        if (gasto.tipo === "INGRESO") {
+          await this.sheetsClient.writeIngreso(gasto.datos);
+        } else {
+          await this.sheetsClient.writeGasto(gasto.datos);
+        }
         saved.push(gasto);
       } catch (error) {
         Logger.error("ERROR writing gasto to sheet", error);

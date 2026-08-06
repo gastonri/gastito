@@ -54,7 +54,7 @@ export class MessageHandlers {
       if (result.usa_contexto === undefined) {
         result.usa_contexto = contextoPrevio !== null;
       }
-      result = this.applyGastoDefaults(result, text, sheetsConfig);
+      result = this.applyDefaults(result, text, sheetsConfig);
       const mapped = mapTransactionIndices(result, sheetsConfig);
       mapped.datos.persona = this.resolvePersona(message);
       return mapped;
@@ -143,7 +143,7 @@ export class MessageHandlers {
       if (result.usa_contexto === undefined) {
         result.usa_contexto = contextoPrevio !== null;
       }
-      result = this.applyGastoDefaults(result, textoTranscrito, sheetsConfig);
+      result = this.applyDefaults(result, textoTranscrito, sheetsConfig);
       const mapped = mapTransactionIndices(result, sheetsConfig);
       mapped.datos.persona = this.resolvePersona(message);
       return mapped;
@@ -230,6 +230,32 @@ export class MessageHandlers {
     }
 
     throw new Error(`Formato de respuesta inesperado: ${cleaned.substring(0, 200)}`);
+  }
+
+  private applyDefaults(
+    result: TransactionResult,
+    text: string,
+    sheetsConfig: ConfigData
+  ): TransactionResult {
+    if (result.tipo === "INGRESO") return this.applyIngresoDefaults(result, text);
+    return this.applyGastoDefaults(result, text, sheetsConfig);
+  }
+
+  private applyIngresoDefaults(result: TransactionResult, text: string): TransactionResult {
+    if (!result.datos.monto || result.datos.monto === 0) {
+      const numberMatch = text.match(/(\d+(?:[.,]\d+)?)/);
+      if (numberMatch) {
+        result.datos.monto = parseFloat(numberMatch[1].replace(",", "."));
+      }
+    }
+
+    if (!result.datos.descripcion || result.datos.descripcion.trim() === "") {
+      result.datos.descripcion = "Pendiente de confirmación";
+    }
+
+    if (!result.datos.moneda) result.datos.moneda = "ARS";
+
+    return result;
   }
 
   private applyGastoDefaults(

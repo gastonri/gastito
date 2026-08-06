@@ -121,6 +121,42 @@ const GASTOS_HEADERS = [
   "dia",
 ];
 
+// ─── Columnas de INGRESOS ─────────────────────────────────────────────────────
+//
+//  A  fecha          DD/MM/YYYY
+//  B  persona        quién recibió el ingreso
+//  C  descripcion    texto libre
+//  D  categoria      ver INGRESO_CATEGORIES
+//  E  monto
+//  F  moneda         ARS | USD
+//  G  link           opcional
+//  H  notas          opcional
+
+const INGRESO_CATEGORIES = [
+  "Sueldo",
+  "Freelance/Changas",
+  "Alquiler cobrado",
+  "Inversiones/Intereses",
+  "Reembolso",
+  "Regalo",
+  "Venta",
+  "Otro",
+];
+
+const INGRESOS_HEADERS = [
+  "fecha",
+  "persona",
+  "descripcion",
+  "categoria",
+  "monto",
+  "moneda",
+  "link",
+  "notas",
+  "año",
+  "mes",
+  "dia",
+];
+
 const HEADER_COLOR = { red: 0.18, green: 0.31, blue: 0.47 }; // #2D4F77
 const WHITE = { red: 1, green: 1, blue: 1 };
 
@@ -273,6 +309,95 @@ async function setupGastos(sheets: sheets_v4.Sheets, sheetId: number) {
   });
 }
 
+// ─── Setup INGRESOS ───────────────────────────────────────────────────────────
+
+async function setupIngresos(sheets: sheets_v4.Sheets, sheetId: number) {
+  // Solo actualiza la fila de headers — no borra datos existentes
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "INGRESOS!A1",
+    valueInputOption: "RAW",
+    requestBody: { values: [INGRESOS_HEADERS] },
+  });
+
+  // D = categoria (index 3), F = moneda (index 5)
+  const CATEGORIA_COL = 3;
+  const MONEDA_COL = 5;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [
+        ...headerFormatRequest(sheetId, INGRESOS_HEADERS.length),
+        // Dropdown de categorías de ingreso
+        {
+          setDataValidation: {
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              endRowIndex: 10000,
+              startColumnIndex: CATEGORIA_COL,
+              endColumnIndex: CATEGORIA_COL + 1,
+            },
+            rule: {
+              condition: {
+                type: "ONE_OF_LIST",
+                values: INGRESO_CATEGORIES.map((c) => ({ userEnteredValue: c })),
+              },
+              showCustomUi: true,
+              strict: false,
+            },
+          },
+        },
+        // Dropdown ARS/USD en columna moneda
+        {
+          setDataValidation: {
+            range: {
+              sheetId,
+              startRowIndex: 1,
+              endRowIndex: 10000,
+              startColumnIndex: MONEDA_COL,
+              endColumnIndex: MONEDA_COL + 1,
+            },
+            rule: {
+              condition: {
+                type: "ONE_OF_LIST",
+                values: [{ userEnteredValue: "ARS" }, { userEnteredValue: "USD" }],
+              },
+              showCustomUi: true,
+              strict: false,
+            },
+          },
+        },
+        // Anchos de columna
+        {
+          updateDimensionProperties: {
+            range: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: INGRESOS_HEADERS.length },
+            properties: { pixelSize: 130 },
+            fields: "pixelSize",
+          },
+        },
+        // descripcion más ancha
+        {
+          updateDimensionProperties: {
+            range: { sheetId, dimension: "COLUMNS", startIndex: 2, endIndex: 3 },
+            properties: { pixelSize: 220 },
+            fields: "pixelSize",
+          },
+        },
+        // link y notas más anchas
+        {
+          updateDimensionProperties: {
+            range: { sheetId, dimension: "COLUMNS", startIndex: 6, endIndex: 8 },
+            properties: { pixelSize: 200 },
+            fields: "pixelSize",
+          },
+        },
+      ],
+    },
+  });
+}
+
 // ─── Setup CONFIG ─────────────────────────────────────────────────────────────
 
 async function setupConfig(sheets: sheets_v4.Sheets, sheetId: number) {
@@ -339,10 +464,14 @@ async function main() {
 
   console.log("📝 Hojas:");
   const gastosId = await getOrCreateSheet(sheets, "GASTOS", existing);
+  const ingresosId = await getOrCreateSheet(sheets, "INGRESOS", existing);
   const configId = await getOrCreateSheet(sheets, "CONFIG", existing);
 
   console.log("\n⚙️  Configurando GASTOS...");
   await setupGastos(sheets, gastosId);
+
+  console.log("⚙️  Configurando INGRESOS...");
+  await setupIngresos(sheets, ingresosId);
 
   console.log("⚙️  Configurando CONFIG...");
   await setupConfig(sheets, configId);
@@ -350,6 +479,7 @@ async function main() {
   const totalSubs = Object.values(CATEGORIES).reduce((n, subs) => n + subs.length, 0);
   console.log("\n✅ Setup completo!");
   console.log(`   Columnas GASTOS: ${GASTOS_HEADERS.join(", ")}`);
+  console.log(`   Columnas INGRESOS: ${INGRESOS_HEADERS.join(", ")}`);
   console.log(`   Categorías: ${Object.keys(CATEGORIES).length} macro (${totalSubs} subcategorías)`);
   console.log(`\n   Abrí el spreadsheet para verificar:`);
   console.log(`   https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}`);

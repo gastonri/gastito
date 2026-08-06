@@ -26,7 +26,7 @@ async function isModifyingPending(results: TransactionResult[], chatId: number):
 
   const result = results[0];
   if (result.usa_contexto) return true;
-  if (result.tipo === "GASTO" && result.datos.monto === existingPending.datos.monto) return true;
+  if (result.tipo === existingPending.tipo && result.datos.monto === existingPending.datos.monto) return true;
 
   return false;
 }
