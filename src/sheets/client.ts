@@ -4,6 +4,7 @@ import { Logger } from "../utils/logger";
 import { SheetsAPIError } from "../utils/errors";
 import { parseDate } from "../services/validator";
 import { extractTextWithoutEmoji, getErrorMessage } from "../utils/text";
+import { MONTH_NAMES_ES } from "../utils/months";
 
 /**
  * Formats a Date object as DD/MM/YYYY string for Google Sheets
@@ -319,7 +320,7 @@ export class SheetsClient {
               (data.link || "").trim(),
               (data.notas || "").trim(),
               fecha.getFullYear(),
-              fecha.getMonth() + 1,
+              MONTH_NAMES_ES[fecha.getMonth()],
               fecha.getDate(),
             ],
           ],
