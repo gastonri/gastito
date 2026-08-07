@@ -35,7 +35,7 @@ Successfully migrated the Budgetify Telegram bot from Google Apps Script to Bun 
 
 5. **Google Sheets Client** (`src/sheets/client.ts`)
    - Read configuration and personal data
-   - Write transactions (GASTO, INGRESO, TRANSFERENCIA)
+   - Write transactions (GASTO, INGRESO)
    - Category mapping and subcategory matching
 
 6. **Services**

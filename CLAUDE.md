@@ -61,7 +61,7 @@ Both providers implement the `AIClient` interface. Users can switch providers vi
 
 ### Google Sheets Structure
 
-Required sheets: `CONFIG` (accounts, categories), `MIS_DATOS` (personal data), `GASTOS` (expenses), `INGRESOS` (income), `TRANSFERENCIAS` (transfers)
+Required sheets: `CONFIG` (accounts, categories), `MIS_DATOS` (personal data), `GASTOS` (expenses), `INGRESOS` (income)
 
 ## Key Environment Variables
 
