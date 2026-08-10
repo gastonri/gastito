@@ -45,13 +45,15 @@ export const handleResumen: CommandHandler = async ({
       const pct = Math.round((monto / total) * 100);
       msg += `${cat}\n   $${monto.toLocaleString("es-AR")} _(${pct}%)_\n`;
     }
-    msg += `${sep}\nTotal: $${total.toLocaleString("es-AR")} ARS`;
+    msg += `${sep}\n💸 *Total gastado:* $${total.toLocaleString("es-AR")} ARS`;
 
     if (cuadernoContable) {
+      const netoEmoji = cuadernoContable.neto_mes >= 0 ? "✅" : "⚠️";
+      const acumuladoEmoji = cuadernoContable.acumulado >= 0 ? "🏦" : "🔻";
       msg +=
         `\n${sep}\n` +
-        `Neto del mes: $${cuadernoContable.neto_mes.toLocaleString("es-AR")} ARS\n` +
-        `Acumulado: $${cuadernoContable.acumulado.toLocaleString("es-AR")} ARS`;
+        `${netoEmoji} *Neto del mes* _(lo que te quedó libre)_: $${cuadernoContable.neto_mes.toLocaleString("es-AR")} ARS\n` +
+        `${acumuladoEmoji} *Acumulado* _(balance junto al mes anterior)_: $${cuadernoContable.acumulado.toLocaleString("es-AR")} ARS`;
     }
 
     await telegramClient.sendMessage(chatId, msg);
