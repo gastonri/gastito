@@ -43,9 +43,11 @@ ${descripcionCategorias}
 
 ⚠️ REGLAS CRÍTICAS:
 1. macro_categoria, subcategoria, moneda DEBEN ser NÚMEROS ENTEROS. NUNCA uses null, strings, ni texto. Si no estás seguro, usá 1 como default.
-2. ⚠️ FECHA: Usá SIEMPRE la fecha del comprobante, NO la fecha de hoy.
+2. ⚠️ FECHA: Usá la fecha del comprobante, NO la fecha de hoy, salvo que el "Contexto del usuario" indique explícitamente otra fecha, en cuyo caso esa fecha tiene prioridad.
 3. mi_parte: número entre 0 y 100 que representa el porcentaje del gasto que corresponde al usuario. Default 100 si no se menciona división.
 4. Si el comprobante tiene múltiples ítems con precios distintos, creá un objeto por cada ítem. Si tiene solo un total, creá uno solo con el total.
+5. Si el "Contexto del usuario" menciona una categoría o subcategoría, priorizala sobre tu inferencia de la imagen.
+6. Si el "Contexto del usuario" tiene aclaraciones o detalles relevantes que no están en el comprobante, incluilos en "notas".
 
 📋 EJEMPLO (ticket con total único):
 {
@@ -93,10 +95,11 @@ Respondé SOLO con JSON válido (sin markdown):
 }
 
 REGLAS:
-- Fecha: SIEMPRE la del comprobante, NUNCA usar fecha de hoy
+- Fecha: la del comprobante, salvo que el usuario indique otra fecha en el contexto
 - Monto: sin separadores de miles, punto decimal (1234.56)
 - Si no hay cuotas: cuotas=1, n_cuota=1
 - mi_parte: si el usuario menciona división (ej: "50/50", "compartido", "mitad"), ajustá el porcentaje
+- Categoría/notas: si el usuario da contexto adicional, usalo para elegir mejor la categoría o completar las notas
 - Si hay múltiples ítems con precios, generá un objeto por cada uno`;
   }
 
