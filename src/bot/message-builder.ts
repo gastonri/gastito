@@ -154,7 +154,9 @@ export class MessageBuilder {
     let shown = 0;
 
     for (const g of saved) {
-      const line = `${escapeMarkdown(g.datos.descripcion)} · $${g.datos.monto} ${g.datos.moneda || "ARS"}\n`;
+      let line = `${escapeMarkdown(g.datos.descripcion)} · $${g.datos.monto} ${g.datos.moneda || "ARS"}`;
+      if (g.datos.fecha) line += ` · ${g.datos.fecha}`;
+      line += `\n`;
 
       if (msg.length + line.length + footer.length > this.MAX_MESSAGE_LENGTH) {
         msg += `… y ${saved.length - shown} más\n`;
