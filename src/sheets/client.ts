@@ -464,6 +464,53 @@ export class SheetsClient {
     }
   }
 
+  /**
+   * Reads the net and accumulated balance for a given month from the CUADERNO_CONTABLE
+   * sheet (columns: año, mes, numero_mes, ingresos, gastos, neto_mes, acumulado). That
+   * sheet computes these values via formulas over GASTOS/INGRESOS, so this just reads
+   * the already-computed row. Returns null if the sheet doesn't exist or has no row
+   * for that month yet.
+   */
+  async getCuadernoContableDelMes(
+    year: number,
+    month: number
+  ): Promise<{ neto_mes: number; acumulado: number } | null> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const exists = await this.sheetExists("CUADERNO_CONTABLE");
+      if (!exists) {
+        return null;
+      }
+
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: "CUADERNO_CONTABLE!A:G",
+      });
+      const rows = (response.data.values as unknown[][]) || [];
+
+      for (const row of rows) {
+        const rowYear = Number(row[0]);
+        const rowNumeroMes = Number(row[2]);
+        if (rowYear !== year || rowNumeroMes !== month) continue;
+
+        const netoRaw = String(row[5] ?? "").replace(/[$,\s]/g, "");
+        const acumuladoRaw = String(row[6] ?? "").replace(/[$,\s]/g, "");
+        const neto_mes = parseFloat(netoRaw);
+        const acumulado = parseFloat(acumuladoRaw);
+        if (isNaN(neto_mes) || isNaN(acumulado)) return null;
+
+        return { neto_mes, acumulado };
+      }
+
+      return null;
+    } catch (error) {
+      Logger.error("Error reading CUADERNO_CONTABLE from Sheets", error);
+      throw new SheetsAPIError(`Failed to read CUADERNO_CONTABLE: ${getErrorMessage(error)}`);
+    }
+  }
+
   private async getLastRow(sheetName: string): Promise<number> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");

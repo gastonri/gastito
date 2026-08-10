@@ -37,6 +37,8 @@ export const handleResumen: CommandHandler = async ({
     const ordenados = [...totales.entries()].sort((a, b) => b[1] - a[1]);
     const total = ordenados.reduce((sum, [, v]) => sum + v, 0);
 
+    const cuadernoContable = await sheetsClient.getCuadernoContableDelMes(year, month);
+
     const sep = "━━━━━━━━━━━━━━━";
     let msg = `📊 *Gastos de ${monthName}*\n${sep}\n`;
     for (const [cat, monto] of ordenados) {
@@ -44,6 +46,13 @@ export const handleResumen: CommandHandler = async ({
       msg += `${cat}\n   $${monto.toLocaleString("es-AR")} _(${pct}%)_\n`;
     }
     msg += `${sep}\nTotal: $${total.toLocaleString("es-AR")} ARS`;
+
+    if (cuadernoContable) {
+      msg +=
+        `\n${sep}\n` +
+        `Neto del mes: $${cuadernoContable.neto_mes.toLocaleString("es-AR")} ARS\n` +
+        `Acumulado: $${cuadernoContable.acumulado.toLocaleString("es-AR")} ARS`;
+    }
 
     await telegramClient.sendMessage(chatId, msg);
   } catch {
