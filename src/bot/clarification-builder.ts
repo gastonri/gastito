@@ -116,14 +116,82 @@ export class ClarificationBuilder {
     return { inline_keyboard: rows };
   }
 
-  private static confirmRows(operationId: string): InlineKeyboardButton[][] {
+  private static confirmRows(operationId: string, withCategory = false): InlineKeyboardButton[][] {
+    const secondRow: InlineKeyboardButton[] = [
+      { text: Buttons.edit, callback_data: `edit_${operationId}` },
+    ];
+    if (withCategory) {
+      secondRow.push({ text: Buttons.category, callback_data: `cat_${operationId}` });
+    }
     return [
       [
         { text: Buttons.confirm, callback_data: `conf_${operationId}` },
         { text: Buttons.cancel, callback_data: `cancel_${operationId}` },
       ],
-      [{ text: Buttons.edit, callback_data: `edit_${operationId}` }],
+      secondRow,
     ];
+  }
+
+  // ---- Category picker (callback_data stays well under Telegram's 64 byte limit:
+  //      prefix + 36 char UUID + up to three small indices)
+
+  private static pairs(buttons: InlineKeyboardButton[]): InlineKeyboardButton[][] {
+    const rows: InlineKeyboardButton[][] = [];
+    for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
+    return rows;
+  }
+
+  private static backRow(callbackData: string): InlineKeyboardButton[] {
+    return [{ text: Buttons.back, callback_data: callbackData }];
+  }
+
+  /** Which movement to recategorize, for operations with several items. */
+  static buildItemPicker(operationId: string, descripciones: string[]): InlineKeyboardMarkup {
+    const rows = descripciones.map((d, i) => [
+      { text: this.truncateText(`${i + 1}. ${d}`, 40), callback_data: `ci_${operationId}_${i}` },
+    ]);
+    rows.push(this.backRow(`cb_${operationId}`));
+    return { inline_keyboard: rows };
+  }
+
+  static buildMacroPicker(
+    operationId: string,
+    itemIdx: number,
+    macros: string[],
+    backTo: string
+  ): InlineKeyboardMarkup {
+    const buttons = macros.map((m, i) => ({
+      text: this.truncateText(m, 22),
+      callback_data: `cm_${operationId}_${itemIdx}_${i}`,
+    }));
+    return { inline_keyboard: [...this.pairs(buttons), this.backRow(backTo)] };
+  }
+
+  static buildSubPicker(
+    operationId: string,
+    itemIdx: number,
+    macroIdx: number,
+    subs: string[],
+    backTo: string
+  ): InlineKeyboardMarkup {
+    const buttons = subs.map((s, i) => ({
+      text: this.truncateText(s, 22),
+      callback_data: `cs_${operationId}_${itemIdx}_${macroIdx}_${i}`,
+    }));
+    return { inline_keyboard: [...this.pairs(buttons), this.backRow(backTo)] };
+  }
+
+  static buildIngresoCategoryPicker(
+    operationId: string,
+    itemIdx: number,
+    categorias: readonly string[],
+    backTo: string
+  ): InlineKeyboardMarkup {
+    const buttons = categorias.map((c, i) => ({
+      text: this.truncateText(c, 22),
+      callback_data: `cg_${operationId}_${itemIdx}_${i}`,
+    }));
+    return { inline_keyboard: [...this.pairs(buttons), this.backRow(backTo)] };
   }
 
   /**
@@ -133,7 +201,7 @@ export class ClarificationBuilder {
     operationId: string,
     dolar?: "TARJETA" | "BLUE" | null
   ): InlineKeyboardMarkup {
-    const rows = this.confirmRows(operationId);
+    const rows = this.confirmRows(operationId, true);
     if (dolar) {
       rows.push([
         {

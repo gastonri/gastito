@@ -12,7 +12,15 @@ import { Logger } from "../utils/logger";
 import { getErrorMessage } from "../utils/text";
 import { formatMoney } from "../utils/format";
 import { Messages } from "./messages";
-import { attachTipoCambio, renderConfirmation, toggleDolar } from "./confirmation";
+import {
+  attachTipoCambio,
+  renderConfirmation,
+  setCategoria,
+  toggleDolar,
+} from "./confirmation";
+import { INGRESO_CATEGORIAS } from "../types";
+import { extractTextWithoutEmoji } from "../utils/text";
+import { escapeMarkdown } from "../utils/format";
 import type { InlineKeyboardMarkup } from "./clarification-builder";
 import type { WrittenRow } from "../types";
 
@@ -37,6 +45,8 @@ export class CallbackHandlers {
       await this.handleConfirm(callback.id, chatId, messageId, data);
     } else if (data.startsWith("cancel_")) {
       await this.handleCancel(callback.id, chatId, messageId, data);
+    } else if (/^(cat|ci|cm|cs|cg|cb)_/.test(data)) {
+      await this.handleCategory(callback.id, chatId, messageId, data);
     } else if (data.startsWith("fx_")) {
       await this.handleFx(callback.id, chatId, messageId, data);
     } else if (data.startsWith("edit_")) {
@@ -126,6 +136,114 @@ export class CallbackHandlers {
 
     await this.telegramClient.editMessage(chatId, messageId, Messages.cancelled);
     await this.telegramClient.answerCallbackQuery(callbackId, Messages.cancelledToast);
+  }
+
+  /**
+   * Category picker. Navigation: cat_ (start) -> ci_ (item) -> cm_ (macro) -> cs_ (sub, applies),
+   * cg_ applies an income category, cb_ goes back to the confirmation.
+   */
+  private async handleCategory(
+    callbackId: string,
+    chatId: number,
+    messageId: number,
+    data: string
+  ): Promise<void> {
+    const [kind, operationId, ...rest] = data.split("_");
+    const nums = rest.map(Number);
+    const stored = await pendingOperations.getOperation(operationId);
+
+    if (!stored) {
+      await this.telegramClient.editMessage(chatId, messageId, Messages.operationExpired);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.operationExpiredToast);
+      return;
+    }
+
+    const showConfirmation = async () => {
+      const { text, keyboard } = renderConfirmation(stored, operationId);
+      await this.sendOrEditMessage(chatId, messageId, text, keyboard);
+    };
+    const backToConfirm = `cb_${operationId}`;
+
+    // Item to show the picker for; with a single item there is nothing to choose.
+    const showItem = async (itemIdx: number) => {
+      const item = stored[itemIdx];
+      if (!item) return showConfirmation();
+      const descripcion = escapeMarkdown(item.datos.descripcion || "");
+      const back = stored.length > 1 ? `cat_${operationId}` : backToConfirm;
+
+      if (item.tipo === "INGRESO") {
+        await this.sendOrEditMessage(
+          chatId,
+          messageId,
+          Messages.categoryPickIngreso(descripcion, item.datos.categoria || "-"),
+          ClarificationBuilder.buildIngresoCategoryPicker(operationId, itemIdx, INGRESO_CATEGORIAS, back)
+        );
+        return;
+      }
+
+      const { categoriasMap } = await this.sheetsClient.getConfig();
+      const actual = `${item.datos.macro_categoria ?? "-"} → ${item.datos.subcategoria ?? "-"}`;
+      await this.sendOrEditMessage(
+        chatId,
+        messageId,
+        Messages.categoryPickMacro(descripcion, escapeMarkdown(actual)),
+        ClarificationBuilder.buildMacroPicker(operationId, itemIdx, Object.keys(categoriasMap), back)
+      );
+    };
+
+    if (kind === "cb") {
+      await showConfirmation();
+    } else if (kind === "cat") {
+      if (stored.length === 1) {
+        await showItem(0);
+      } else {
+        await this.sendOrEditMessage(
+          chatId,
+          messageId,
+          Messages.categoryPickItem,
+          ClarificationBuilder.buildItemPicker(
+            operationId,
+            stored.map((r) => r.datos.descripcion || "Sin descripción")
+          )
+        );
+      }
+    } else if (kind === "ci") {
+      await showItem(nums[0]);
+    } else if (kind === "cm") {
+      const [itemIdx, macroIdx] = nums;
+      const { categoriasMap } = await this.sheetsClient.getConfig();
+      const macro = Object.keys(categoriasMap)[macroIdx];
+      if (!macro) return showConfirmation();
+      const subs = categoriasMap[macro].map((s) => extractTextWithoutEmoji(s));
+      await this.sendOrEditMessage(
+        chatId,
+        messageId,
+        Messages.categoryPickSub(escapeMarkdown(macro)),
+        ClarificationBuilder.buildSubPicker(operationId, itemIdx, macroIdx, subs, `ci_${operationId}_${itemIdx}`)
+      );
+    } else if (kind === "cs" || kind === "cg") {
+      const item = stored[nums[0]];
+      if (!item) return showConfirmation();
+
+      if (kind === "cg") {
+        const categoria = INGRESO_CATEGORIAS[nums[1]];
+        if (!categoria) return showConfirmation();
+        setCategoria(item, { categoria });
+      } else {
+        const { categoriasMap } = await this.sheetsClient.getConfig();
+        const macro = Object.keys(categoriasMap)[nums[1]];
+        const sub = macro ? categoriasMap[macro][nums[2]] : undefined;
+        if (!macro || !sub) return showConfirmation();
+        setCategoria(item, { macro, sub: extractTextWithoutEmoji(sub) });
+      }
+
+      await pendingOperations.setOperationData(operationId, stored);
+      await showConfirmation();
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.categoryChangedToast);
+      return;
+    }
+
+    await this.telegramClient.answerCallbackQuery(callbackId, "");
   }
 
   /** Switches the pending USD expense(s) between dólar tarjeta and dólar blue. */

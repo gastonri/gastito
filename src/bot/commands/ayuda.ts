@@ -25,7 +25,7 @@ export const handleAyuda: CommandHandler = async ({ chatId, telegramClient }) =>
       "• Las fotos de tickets se analizan automáticamente\n" +
       "• Los audios se transcriben antes de procesar\n" +
       "• Antes de tocar Confirmar podés mandar otro mensaje para corregir el registro pendiente (monto, categoría, etc.)\n" +
-      "• Cada registro se manda con botones ✅ Confirmar / 🗑️ Cancelar / ✏️ Editar\n" +
+      "• Cada registro se manda con botones ✅ Confirmar / 🗑️ Cancelar / ✏️ Editar / 🏷️ Categoría (y 💱 para cambiar entre dólar tarjeta y blue)\n" +
       "• Si no se puede guardar, queda pendiente y podés tocar 🔁 Reintentar\n" +
       "• `/nuevo`, `/reset` y `/exit` te piden confirmación antes de borrar"
   );

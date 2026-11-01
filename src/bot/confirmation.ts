@@ -69,3 +69,22 @@ export function renderConfirmation(
     keyboard: ClarificationBuilder.buildConfirmCancelKeyboard(operationId, currentDolar(results)),
   };
 }
+
+/**
+ * Applies a category chosen by the user. The user's choice replaces the model's guess, so any
+ * "low confidence" warning is cleared.
+ */
+export function setCategoria(
+  result: TransactionResult,
+  choice: { macro: string; sub: string } | { categoria: string }
+): void {
+  if ("categoria" in choice) {
+    result.datos.categoria = choice.categoria;
+  } else {
+    result.datos.macro_categoria = choice.macro;
+    result.datos.subcategoria = choice.sub;
+  }
+  result.confianza = "ALTA";
+  result.campos_faltantes = [];
+  delete result.alerta;
+}

@@ -60,6 +60,15 @@ export const Messages = {
   dangerAborted: "👍 Listo, no cambié nada.",
   dangerAbortedToast: "Sin cambios",
 
+  // Category change
+  categoryPickItem: "🏷️ *¿A cuál movimiento le cambiás la categoría?*",
+  categoryPickMacro: (descripcion: string, actual: string) =>
+    `🏷️ *Categoría de "${descripcion}"*\nActual: ${actual}\n\nElegí la categoría:`,
+  categoryPickSub: (macro: string) => `🏷️ *${macro}*\n\nElegí la subcategoría:`,
+  categoryPickIngreso: (descripcion: string, actual: string) =>
+    `🏷️ *Categoría de "${descripcion}"*\nActual: ${actual}\n\nElegí la categoría:`,
+  categoryChangedToast: "Categoría actualizada",
+
   // Dollar rate
   fxToBlue: "💱 Cambiar a dólar blue",
   fxToTarjeta: "💱 Cambiar a dólar tarjeta",
@@ -96,6 +105,8 @@ export const Buttons = {
   confirm: "✅ Confirmar",
   cancel: "🗑️ Cancelar",
   edit: "✏️ Editar",
+  category: "🏷️ Categoría",
+  back: "⬅️ Volver",
   retry: "🔁 Reintentar",
   yesReset: "Sí, limpiar",
   yesExit: "Sí, terminar",
