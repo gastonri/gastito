@@ -1,0 +1,79 @@
+{
+  "ALIMENTACIÓN": [
+    "Supermercado",
+    "Restaurante",
+    "Café y Snacks",
+    "Delivery",
+    "Verdulería",
+    "Carnicería y Pollería",
+    "Kiosco"
+  ],
+  "VIVIENDA": [
+    "Servicios",
+    "Mantenimiento/Reparaciones",
+    "Mobiliario/Decoración"
+  ],
+  "TRANSPORTE": [
+    "Combustible",
+    "Transporte público",
+    "Taxi/Uber",
+    "Viajes",
+    "Mantenimiento vehículo",
+    "Estacionamiento",
+    "Peajes"
+  ],
+  "SALUD": [
+    "Farmacia",
+    "Obra Social/Prepaga",
+    "Consultas médicas",
+    "Odontología",
+    "Psicología",
+    "Deporte/Gym"
+  ],
+  "EDUCACIÓN": [
+    "Cursos/Capacitaciones",
+    "Libros/Materiales",
+    "Cuota colegio/universidad",
+    "Idiomas"
+  ],
+  "TECNOLOGÍA": [
+    "Suscripciones digitales",
+    "Software/Licencias",
+    "Hardware/Electrónica",
+    "Telefonía/Celular"
+  ],
+  "ENTRETENIMIENTO": [
+    "Cine/Teatro/Shows",
+    "Hobbies",
+    "Viajes/Turismo",
+    "Salidas/Recreación"
+  ],
+  "INDUMENTARIA": [
+    "Ropa",
+    "Calzado",
+    "Accesorios",
+    "Peluquería/Estética"
+  ],
+  "HOGAR": [
+    "Limpieza/Productos",
+    "Mercadería no alimenticia",
+    "Jardinería"
+  ],
+  "FINANZAS": [
+    "Impuestos",
+    "Seguros",
+    "Comisiones bancarias",
+    "Inversiones",
+    "Asesoría financiera"
+  ],
+  "REGALOS Y DONACIONES": [
+    "Regalos",
+    "Donaciones",
+    "Eventos/Celebraciones"
+  ],
+  "MASCOTAS": [
+    "Veterinario",
+    "Alimento",
+    "Accesorios"
+  ]
+}

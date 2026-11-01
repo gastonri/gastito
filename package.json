@@ -20,7 +20,8 @@
     "setup": "bun --env-file=.env scripts/setup-sheets.ts",
     "deploy": "bash scripts/deploy.sh deploy -a gastito",
     "deploy:logs": "bash scripts/deploy-logs.sh",
-    "deploy:status": "bash scripts/deploy-status.sh"
+    "deploy:status": "bash scripts/deploy-status.sh",
+    "eval:prompts": "bun run scripts/eval-prompts.ts"
   },
   "keywords": [
     "telegram",
