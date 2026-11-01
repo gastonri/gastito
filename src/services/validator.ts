@@ -196,5 +196,14 @@ export function mapTransactionIndices(
   datos.moneda = mapIndexToValue(monedaIndex, MONEDA_OPTIONS);
   Logger.log(`Mapped moneda: ${monedaIndex} → "${datos.moneda}"`);
 
+  // Dollar rate: only meaningful for USD expenses, TARJETA unless the model said BLUE.
+  if (datos.moneda === "USD") {
+    const rawValue = datos.cotizacion as unknown;
+    const raw = typeof rawValue === "string" ? rawValue.toUpperCase() : "";
+    datos.cotizacion = raw === "BLUE" ? "BLUE" : "TARJETA";
+  } else {
+    delete datos.cotizacion;
+  }
+
   return { ...result, datos };
 }

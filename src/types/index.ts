@@ -81,6 +81,8 @@ export interface TransactionData {
   cuotas?: number;
   n_cuota?: number;
   mi_parte?: number;
+  /** Which dollar rate to use when moneda is USD. Defaults to TARJETA. */
+  cotizacion?: "TARJETA" | "BLUE";
   link?: string;
   notas?: string;
 }
@@ -94,6 +96,8 @@ export interface TransactionResult {
   alerta?: string;
   usa_contexto?: boolean;
   duplicado?: boolean;
+  /** Rate (ARS per USD) shown in the confirmation for USD expenses. Not written to the sheet. */
+  tipo_cambio?: number;
 }
 
 // Context Types

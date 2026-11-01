@@ -1,5 +1,5 @@
 import type { ClarificationQuestion, AIClarificationResponse } from "../types";
-import { Buttons } from "./messages";
+import { Buttons, Messages } from "./messages";
 
 export interface InlineKeyboardButton {
   text: string;
@@ -129,8 +129,20 @@ export class ClarificationBuilder {
   /**
    * Builds the confirm/cancel keyboard with an extra edit button.
    */
-  static buildConfirmCancelKeyboard(operationId: string): InlineKeyboardMarkup {
-    return { inline_keyboard: this.confirmRows(operationId) };
+  static buildConfirmCancelKeyboard(
+    operationId: string,
+    dolar?: "TARJETA" | "BLUE" | null
+  ): InlineKeyboardMarkup {
+    const rows = this.confirmRows(operationId);
+    if (dolar) {
+      rows.push([
+        {
+          text: dolar === "BLUE" ? Messages.fxToTarjeta : Messages.fxToBlue,
+          callback_data: `fx_${operationId}`,
+        },
+      ]);
+    }
+    return { inline_keyboard: rows };
   }
 
   /**

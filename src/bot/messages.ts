@@ -60,6 +60,11 @@ export const Messages = {
   dangerAborted: "👍 Listo, no cambié nada.",
   dangerAbortedToast: "Sin cambios",
 
+  // Dollar rate
+  fxToBlue: "💱 Cambiar a dólar blue",
+  fxToTarjeta: "💱 Cambiar a dólar tarjeta",
+  fxChangedToast: (tipo: string) => `Ahora usa dólar ${tipo}`,
+
   // Undo
   undoNothing:
     "🤷 No tengo nada para deshacer.\n\nSolo puedo deshacer la última confirmación, dentro de las 24 horas.",

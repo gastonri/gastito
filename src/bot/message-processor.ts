@@ -1,7 +1,6 @@
 import { TelegramMessage, TransactionResult } from "../types";
 import { TelegramClient } from "./telegram";
 import { MessageHandlers } from "./handlers";
-import { MessageBuilder } from "./message-builder";
 import { AudioProcessor } from "../services/audio-processor";
 import { AIClientManager } from "../ai/client";
 import { SheetsClient } from "../sheets/client";
@@ -10,7 +9,7 @@ import { UserPreferencesService } from "../services/user-preferences";
 import { pendingOperations } from "../services/pending-operations";
 import { sendProcessingError, UserFacingError } from "./error-handler";
 import { Messages } from "./messages";
-import { ClarificationBuilder } from "./clarification-builder";
+import { attachTipoCambio, renderConfirmation } from "./confirmation";
 
 export interface MessageProcessorContext {
   message: TelegramMessage;
@@ -113,6 +112,7 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     }
 
     await flagDuplicates(results, sheetsClient);
+    await attachTipoCambio(results, sheetsClient);
 
     const isModification = await isModifyingPending(results, chatId);
     let operationId: string;
@@ -123,12 +123,7 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       operationId = await pendingOperations.createOperation(results, chatId);
     }
 
-    const keyboard = ClarificationBuilder.buildConfirmCancelKeyboard(operationId);
-
-    const confirmationMessage =
-      results.length === 1
-        ? MessageBuilder.buildConfirmationMessage(results[0])
-        : MessageBuilder.buildMultiConfirmationMessage(results);
+    const { text: confirmationMessage, keyboard } = renderConfirmation(results, operationId);
 
     if (loadingMessageId) {
       await telegramClient.editMessage(chatId, loadingMessageId, confirmationMessage, keyboard);

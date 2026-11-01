@@ -14,10 +14,16 @@ function makeClient() {
     ["4/6/2026 12:17:13", "1898"],
     ["5/6/2026 9:16:21", "1891.5"],
   ];
+  const dolarBlue = [
+    ["fecha", "precio"],
+    ["1/11/2026 13:23:55", "1565"],
+  ];
   const fakeSheets = {
     spreadsheets: {
       values: {
         get: ({ range }: { range: string }) => {
+          if (range.startsWith("'Dolar Blue'"))
+            return Promise.resolve({ data: { values: dolarBlue } });
           if (range.startsWith("'Dolar Tarjeta'"))
             return Promise.resolve({ data: { values: dolarTarjeta } });
           if (range.startsWith("CONFIG"))
@@ -83,6 +89,24 @@ describe("SheetsClient.writeGasto", () => {
     expect(updates[0].values[0][6]).toBe("USD");
     // 5 USD * 1891.5 = 9457.5 (same value as the existing USD rows in the sheet)
     expect(updates[1].values[0][0]).toBe('=IFERROR(IF(H4>0,F4/H4,F4)*1891.5,"")');
+    expect(updates[1].values[0][3]).toBe("USD a dólar tarjeta $1891.5"); // notas
+  });
+
+  test("USD with cotizacion BLUE uses the Dolar Blue sheet", async () => {
+    const { client, updates } = makeClient();
+    await client.writeGasto({
+      fecha: "05/06/2026",
+      descripcion: "Hotel",
+      macro_categoria: "ENTRETENIMIENTO",
+      subcategoria: "Viajes/Turismo",
+      monto: 50,
+      moneda: "USD",
+      cotizacion: "BLUE",
+      notas: "Efectivo",
+    });
+    // The blue sheet only has 1/11, so it falls back to its earliest rate.
+    expect(updates[1].values[0][0]).toBe('=IFERROR(IF(H4>0,F4/H4,F4)*1565,"")');
+    expect(updates[1].values[0][3]).toBe("Efectivo · USD a dólar blue $1565");
   });
 
   test("cuotas: imp_mensual divides the total amount", async () => {

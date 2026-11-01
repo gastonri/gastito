@@ -255,15 +255,21 @@ export class SheetsClient {
       const miParte = data.mi_parte !== undefined ? data.mi_parte : 100;
 
       // imp_mensual feeds CUADERNO_CONTABLE in ARS, so USD expenses are converted using
-      // the rate in force on the expense date (sheet "Dolar Tarjeta").
+      // the rate in force on the expense date ("Dolar Tarjeta" by default, or "Dolar Blue").
       const moneda = data.moneda || "ARS";
+      const tipoDolar = data.cotizacion === "BLUE" ? "BLUE" : "TARJETA";
       let tipoCambio = 1;
+      let notas = (data.notas || "").trim();
       if (moneda === "USD") {
-        const cotizacion = await this.getCotizacionDolarTarjeta(fecha);
+        const cotizacion = await this.getCotizacionDolar(tipoDolar, fecha);
         if (cotizacion === null) {
-          throw new Error("No hay cotización disponible en la hoja Dolar Tarjeta");
+          throw new Error(
+            `No hay cotización disponible en la hoja Dolar ${tipoDolar === "BLUE" ? "Blue" : "Tarjeta"}`
+          );
         }
         tipoCambio = cotizacion;
+        const nota = `USD a dólar ${tipoDolar === "BLUE" ? "blue" : "tarjeta"} $${cotizacion}`;
+        notas = notas ? `${notas} · ${nota}` : nota;
       }
       const impMensualFormula =
         tipoCambio === 1
@@ -303,7 +309,7 @@ export class SheetsClient {
               impMensualFormula,
               String(miParte),
               (data.link || "").trim(),
-              (data.notas || "").trim(),
+              notas,
               fecha.getFullYear(),
               fecha.getMonth() + 1,
               fecha.getDate(),
@@ -401,22 +407,23 @@ export class SheetsClient {
   }
 
   /**
-   * Rate in force on `fecha` from the "Dolar Tarjeta" sheet (columns: fecha, precio),
-   * or null if the sheet is missing or empty.
+   * Rate in force on `fecha` from the "Dolar Tarjeta" or "Dolar Blue" sheet
+   * (columns: fecha, precio), or null if the sheet is missing or empty.
    */
-  async getCotizacionDolarTarjeta(fecha: Date): Promise<number | null> {
+  async getCotizacionDolar(tipo: "TARJETA" | "BLUE", fecha: Date): Promise<number | null> {
+    const sheetName = tipo === "BLUE" ? "Dolar Blue" : "Dolar Tarjeta";
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
     }
     try {
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: "'Dolar Tarjeta'!A:B",
+        range: `'${sheetName}'!A:B`,
       });
       const rows = parseCotizacionRows((response.data.values as unknown[][]) || []);
       return pickCotizacion(rows, fecha);
     } catch (error) {
-      Logger.error("Error reading Dolar Tarjeta from Sheets", error);
+      Logger.error(`Error reading ${sheetName} from Sheets`, error);
       return null;
     }
   }

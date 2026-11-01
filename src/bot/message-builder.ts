@@ -2,6 +2,15 @@ import { TransactionResult } from "../types";
 import { escapeMarkdown, formatAmount, formatMoney, formatFecha } from "../utils/format";
 import { Messages } from "./messages";
 
+/** "Dólar tarjeta ($2.028) · ≈ $40.560 ARS" line for USD expenses, or "" for other currencies. */
+function cotizacionLine(data: TransactionResult): string {
+  if (data.tipo !== "GASTO" || data.datos.moneda !== "USD") return "";
+  const nombre = data.datos.cotizacion === "BLUE" ? "Dólar blue" : "Dólar tarjeta";
+  if (!data.tipo_cambio) return `\n💱 *Cotización:* ${nombre}`;
+  const equivalente = (data.datos.monto || 0) * data.tipo_cambio;
+  return `\n💱 *Cotización:* ${nombre} ($${formatMoney(data.tipo_cambio)}) · ≈ $${formatMoney(equivalente)} ARS`;
+}
+
 function totalsFooter(items: TransactionResult[]): string {
   const hasGasto = items.some((g) => g.tipo === "GASTO");
   const hasIngreso = items.some((g) => g.tipo === "INGRESO");
@@ -52,6 +61,7 @@ export class MessageBuilder {
         `🏷️ *Categoría:* ${d.macro_categoria}\n` +
         `🔖 *Subcategoría:* ${d.subcategoria}\n` +
         `👤 *Persona:* ${d.persona || "—"}` +
+        cotizacionLine(data) +
         (miParte < 100 ? `\n💰 *Mi parte:* ${miParte}%` : "") +
         (d.cuotas && d.cuotas > 1 ? `\n💳 *Cuotas:* ${d.cuotas} (cuota ${d.n_cuota || 1})` : "") +
         (notas ? `\n📋 *Notas:* ${notas}` : "") +
@@ -88,6 +98,7 @@ export class MessageBuilder {
         const miParte = d.mi_parte !== undefined ? d.mi_parte : 100;
         if (miParte < 100) extras.push(`${miParte}% mi parte`);
         if (d.cuotas && d.cuotas > 1) extras.push(`${d.cuotas} cuotas`);
+        if (d.moneda === "USD") extras.push(d.cotizacion === "BLUE" ? "dólar blue" : "dólar tarjeta");
       }
 
       let item = `${sep}\n`;

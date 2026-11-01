@@ -65,7 +65,8 @@ const REGLAS_CUOTAS = `CUOTAS:
 - Sin cuotas: cuotas=1 y n_cuota=1. "Sin interés" no cambia nada.`;
 
 const REGLAS_MONEDA = `MONEDA:
-- Pesos (por defecto) = 1. Dólares ("dólares", "usd", "u$s", "US$") = 2.`;
+- Pesos (por defecto) = 1. Dólares ("dólares", "usd", "u$s", "US$") = 2.
+- COTIZACION (solo si moneda=2): "TARJETA" por defecto (pagos con tarjeta, suscripciones y compras online, o si no aclara). "BLUE" solo si el pago fue en efectivo / billetes o menciona "blue". Si moneda=1 no incluyas "cotizacion".`;
 
 const REGLAS_DESCRIPCION = `DESCRIPCIÓN:
 - Corta, con el nombre del comercio o el concepto, sin el monto ni la fecha (ej: "Supermercado Carrefour", "Almuerzo", "Uber").`;
@@ -81,6 +82,7 @@ interface GastoDatos {
   monto: number;
   fecha?: string;
   moneda?: Moneda;
+  cotizacion?: "TARJETA" | "BLUE";
   cuotas?: number;
   n_cuota?: number;
   mi_parte?: number;
@@ -112,6 +114,7 @@ function gasto(map: CategoryMap, macro: string, sub: string, d: GastoDatos, extr
       subcategoria: s,
       monto: d.monto,
       moneda: d.moneda === "USD" ? 2 : 1,
+      ...(d.moneda === "USD" ? { cotizacion: d.cotizacion ?? "TARJETA" } : {}),
       cuotas: d.cuotas ?? 1,
       n_cuota: d.n_cuota ?? 1,
       mi_parte: d.mi_parte ?? 100,
@@ -212,6 +215,18 @@ function buildTextExamples(map: CategoryMap, now: Date): string {
           descripcion: "Suscripción Claude",
           monto: 20,
           moneda: "USD",
+        })
+      ),
+    }),
+    ejemplo({
+      entradaTag: "mensaje_usuario",
+      entrada: "pagué 50 dólares en efectivo la reserva del hotel",
+      salida: respuesta(
+        gasto(map, "ENTRETENIMIENTO", "Viajes/Turismo", {
+          descripcion: "Reserva de hotel",
+          monto: 50,
+          moneda: "USD",
+          cotizacion: "BLUE",
         })
       ),
     }),
@@ -403,7 +418,7 @@ ${REGLAS_CUOTAS}
 - En un voucher de tarjeta, "3 cuotas de $X" con importe total: usá el importe total como monto.
 
 ${REGLAS_MONEDA}
-- Si el comprobante está en USD, moneda=2 y el monto en dólares.
+- Si el comprobante está en USD, moneda=2 y el monto en dólares. Facturas de servicios online y vouchers de tarjeta: cotizacion "TARJETA".
 
 ${REGLAS_DESCRIPCION}
 
@@ -436,6 +451,7 @@ Analizá la imagen y respondé SOLO con JSON válido (sin markdown), con este fo
         "subcategoria": INTEGER,
         "monto": NUMBER,
         "moneda": INTEGER (1=ARS, 2=USD),
+        "cotizacion": "TARJETA" | "BLUE" (solo si moneda=2),
         "cuotas": INTEGER,
         "n_cuota": INTEGER,
         "mi_parte": NUMBER (0-100),
@@ -561,6 +577,7 @@ Respondé SOLO con JSON válido (sin markdown), con este formato:
         "categoria": INTEGER (solo INGRESO),
         "monto": NUMBER,
         "moneda": INTEGER (1=ARS, 2=USD),
+        "cotizacion": "TARJETA" | "BLUE" (solo GASTO con moneda=2),
         "cuotas": INTEGER (solo GASTO),
         "n_cuota": INTEGER (solo GASTO),
         "mi_parte": NUMBER 0-100 (solo GASTO),

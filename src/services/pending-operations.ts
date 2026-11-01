@@ -135,6 +135,21 @@ class PendingOperationsManager {
     return operationId;
   }
 
+  /** Replaces the data of an existing operation (e.g. after changing the dollar rate). */
+  async setOperationData(operationId: string, data: TransactionResult[]): Promise<boolean> {
+    await this.ensureConnected();
+    const raw = await this.redis.get(this.operationKey(operationId));
+    if (!raw) return false;
+
+    const stored = JSON.parse(raw) as StoredOperation;
+    await this.redis.setex(
+      this.operationKey(operationId),
+      TTL_SECONDS,
+      JSON.stringify({ ...stored, data })
+    );
+    return true;
+  }
+
   async disconnect(): Promise<void> {
     await this.redis.quit();
   }

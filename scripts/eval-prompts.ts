@@ -143,6 +143,7 @@ function compare(expected: ExpectedTx, actual: TransactionResult): FieldCheck[] 
   if (expected.categoria !== undefined) eq("categoria", d.categoria, d.categoria === expected.categoria);
   if (expected.monto !== undefined) eq("monto", d.monto, Math.abs((d.monto ?? NaN) - expected.monto) < 0.51);
   if (expected.moneda !== undefined) eq("moneda", d.moneda, d.moneda === expected.moneda);
+  if (expected.cotizacion !== undefined) eq("cotizacion", d.cotizacion, d.cotizacion === expected.cotizacion);
   if (expected.cuotas !== undefined) eq("cuotas", d.cuotas, (d.cuotas ?? 1) === expected.cuotas);
   if (expected.n_cuota !== undefined) eq("n_cuota", d.n_cuota, (d.n_cuota ?? 1) === expected.n_cuota);
   if (expected.mi_parte !== undefined) eq("mi_parte", d.mi_parte, (d.mi_parte ?? 100) === expected.mi_parte);

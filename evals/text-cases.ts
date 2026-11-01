@@ -16,6 +16,7 @@ export interface ExpectedTx {
   categoria?: string;
   monto?: number;
   moneda?: "ARS" | "USD";
+  cotizacion?: "TARJETA" | "BLUE";
   cuotas?: number;
   n_cuota?: number;
   mi_parte?: number;
@@ -89,7 +90,11 @@ export const TEXT_CASES: TextCase[] = [
 
   // ---- Moneda
   { id: "moneda-usd", tags: ["moneda"], input: "suscripción de Claude 20 dólares",
-    expect: [{ tipo: "GASTO", macro_categoria: "TECNOLOGÍA", monto: 20, moneda: "USD" }] },
+    expect: [{ tipo: "GASTO", macro_categoria: "TECNOLOGÍA", monto: 20, moneda: "USD", cotizacion: "TARJETA" }] },
+  { id: "moneda-usd-efectivo", tags: ["moneda"], input: "pagué 100 dólares en efectivo el alquiler del auto",
+    expect: [{ tipo: "GASTO", monto: 100, moneda: "USD", cotizacion: "BLUE" }] },
+  { id: "moneda-usd-blue", tags: ["moneda"], input: "compré un regalo por 30 usd al blue",
+    expect: [{ tipo: "GASTO", macro_categoria: "REGALOS Y DONACIONES", monto: 30, moneda: "USD", cotizacion: "BLUE" }] },
   { id: "moneda-usd-sigla", tags: ["moneda"], input: "spotify 5 usd",
     expect: [{ tipo: "GASTO", macro_categoria: "TECNOLOGÍA", subcategoria: "Suscripciones digitales", monto: 5, moneda: "USD" }] },
 

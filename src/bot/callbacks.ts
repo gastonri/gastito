@@ -12,6 +12,7 @@ import { Logger } from "../utils/logger";
 import { getErrorMessage } from "../utils/text";
 import { formatMoney } from "../utils/format";
 import { Messages } from "./messages";
+import { attachTipoCambio, renderConfirmation, toggleDolar } from "./confirmation";
 import type { InlineKeyboardMarkup } from "./clarification-builder";
 import type { WrittenRow } from "../types";
 
@@ -36,6 +37,8 @@ export class CallbackHandlers {
       await this.handleConfirm(callback.id, chatId, messageId, data);
     } else if (data.startsWith("cancel_")) {
       await this.handleCancel(callback.id, chatId, messageId, data);
+    } else if (data.startsWith("fx_")) {
+      await this.handleFx(callback.id, chatId, messageId, data);
     } else if (data.startsWith("edit_")) {
       await this.handleEdit(callback.id, chatId, data);
     } else if (data.startsWith("dz_")) {
@@ -123,6 +126,33 @@ export class CallbackHandlers {
 
     await this.telegramClient.editMessage(chatId, messageId, Messages.cancelled);
     await this.telegramClient.answerCallbackQuery(callbackId, Messages.cancelledToast);
+  }
+
+  /** Switches the pending USD expense(s) between dólar tarjeta and dólar blue. */
+  private async handleFx(
+    callbackId: string,
+    chatId: number,
+    messageId: number,
+    data: string
+  ): Promise<void> {
+    const operationId = data.replace("fx_", "");
+    const stored = await pendingOperations.getOperation(operationId);
+
+    if (!stored) {
+      await this.telegramClient.editMessage(chatId, messageId, Messages.operationExpired);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.operationExpiredToast);
+      return;
+    }
+
+    toggleDolar(stored);
+    await attachTipoCambio(stored, this.sheetsClient);
+    await pendingOperations.setOperationData(operationId, stored);
+
+    const { text, keyboard } = renderConfirmation(stored, operationId);
+    await this.sendOrEditMessage(chatId, messageId, text, keyboard);
+
+    const tipo = stored.find((r) => r.datos.cotizacion)?.datos.cotizacion === "BLUE" ? "blue" : "tarjeta";
+    await this.telegramClient.answerCallbackQuery(callbackId, Messages.fxChangedToast(tipo));
   }
 
   private async handleEdit(callbackId: string, chatId: number, data: string): Promise<void> {
