@@ -3,7 +3,8 @@ import { config } from "../config";
 import { Logger } from "../utils/logger";
 import { SheetsAPIError } from "../utils/errors";
 import { parseDate } from "../services/validator";
-import { extractTextWithoutEmoji, getErrorMessage } from "../utils/text";
+import { extractTextWithoutEmoji, getErrorMessage, cellToString } from "../utils/text";
+import { parseCotizacionRows, pickCotizacion } from "../utils/cotizacion";
 import { MONTH_NAMES_ES } from "../utils/months";
 
 /**
@@ -15,12 +16,21 @@ function formatDateForSheets(date: Date): string {
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
 }
-import { CategoryMap, ConfigData, TransactionData, GoogleSheetsSpreadsheet } from "../types";
+import {
+  CategoryMap,
+  ConfigData,
+  TransactionData,
+  GoogleSheetsSpreadsheet,
+  WrittenRow,
+} from "../types";
+
+const GASTOS_CACHE_TTL_MS = 60 * 1000;
 
 export class SheetsClient {
   private auth: InstanceType<typeof google.auth.GoogleAuth> | null = null;
   private sheets: sheets_v4.Sheets | null = null;
   private spreadsheetId: string;
+  private gastosCache: { rows: unknown[][]; at: number } | null = null;
 
   constructor() {
     this.spreadsheetId = config.sheets.spreadsheetId;
@@ -212,7 +222,7 @@ export class SheetsClient {
     }
   }
 
-  async writeGasto(data: TransactionData): Promise<void> {
+  async writeGasto(data: TransactionData): Promise<WrittenRow> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
     }
@@ -238,6 +248,22 @@ export class SheetsClient {
       const nCuota = parseInt(String(data.n_cuota || 1), 10);
       const miParte = data.mi_parte !== undefined ? data.mi_parte : 100;
 
+      // imp_mensual feeds CUADERNO_CONTABLE in ARS, so USD expenses are converted using
+      // the rate in force on the expense date (sheet "Dolar Tarjeta").
+      const moneda = data.moneda || "ARS";
+      let tipoCambio = 1;
+      if (moneda === "USD") {
+        const cotizacion = await this.getCotizacionDolarTarjeta(fecha);
+        if (cotizacion === null) {
+          throw new Error("No hay cotización disponible en la hoja Dolar Tarjeta");
+        }
+        tipoCambio = cotizacion;
+      }
+      const impMensualFormula =
+        tipoCambio === 1
+          ? `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow}),"")`
+          : `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow})*${tipoCambio},"")`;
+
       // Write A:I (fecha through n_cuota)
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
@@ -252,7 +278,7 @@ export class SheetsClient {
               (data.macro_categoria || "").trim(),
               subcategoriaConEmoji,
               parseFloat(String(data.monto || 0)),
-              data.moneda || "ARS",
+              moneda,
               String(cuotas),
               String(nCuota),
             ],
@@ -268,7 +294,7 @@ export class SheetsClient {
         requestBody: {
           values: [
             [
-              `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow}),"")`,
+              impMensualFormula,
               String(miParte),
               (data.link || "").trim(),
               (data.notas || "").trim(),
@@ -280,14 +306,21 @@ export class SheetsClient {
         },
       });
 
+      this.gastosCache = null;
       Logger.log(`✅ GASTO written successfully in row ${newRow}`);
+      return {
+        sheet: "GASTOS",
+        row: newRow,
+        descripcion: (data.descripcion || "").trim(),
+        monto: parseFloat(String(data.monto || 0)),
+      };
     } catch (error) {
       Logger.error("Error writing GASTO to Sheets", error);
       throw new SheetsAPIError(`Failed to write GASTO: ${getErrorMessage(error)}`);
     }
   }
 
-  async writeIngreso(data: TransactionData): Promise<void> {
+  async writeIngreso(data: TransactionData): Promise<WrittenRow> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
     }
@@ -328,9 +361,133 @@ export class SheetsClient {
       });
 
       Logger.log(`✅ INGRESO written successfully in row ${newRow}`);
+      return {
+        sheet: "INGRESOS",
+        row: newRow,
+        descripcion: (data.descripcion || "").trim(),
+        monto: parseFloat(String(data.monto || 0)),
+      };
     } catch (error) {
       Logger.error("Error writing INGRESO to Sheets", error);
       throw new SheetsAPIError(`Failed to write INGRESO: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Raw GASTOS rows, cached briefly so consecutive commands don't re-read the whole sheet.
+   * Invalidated whenever the bot writes or deletes a row.
+   */
+  private async getGastosRows(): Promise<unknown[][]> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    const now = Date.now();
+    if (this.gastosCache && now - this.gastosCache.at < GASTOS_CACHE_TTL_MS) {
+      return this.gastosCache.rows;
+    }
+    const response = await this.sheets.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: "GASTOS!A:P",
+    });
+    const rows = (response.data.values as unknown[][]) || [];
+    this.gastosCache = { rows, at: now };
+    return rows;
+  }
+
+  /**
+   * Rate in force on `fecha` from the "Dolar Tarjeta" sheet (columns: fecha, precio),
+   * or null if the sheet is missing or empty.
+   */
+  async getCotizacionDolarTarjeta(fecha: Date): Promise<number | null> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: "'Dolar Tarjeta'!A:B",
+      });
+      const rows = parseCotizacionRows((response.data.values as unknown[][]) || []);
+      return pickCotizacion(rows, fecha);
+    } catch (error) {
+      Logger.error("Error reading Dolar Tarjeta from Sheets", error);
+      return null;
+    }
+  }
+
+  /** True if GASTOS already has an entry with the same day, amount and description. */
+  async findDuplicateGasto(data: TransactionData): Promise<boolean> {
+    const rows = await this.getGastosRows();
+    const target = (data.fecha && parseDate(data.fecha)) || new Date();
+    const desc = (data.descripcion || "").trim().toLowerCase();
+    const monto = Number(data.monto || 0);
+
+    return rows.some((row) => {
+      const rowDate = parseDate(cellToString(row[0]));
+      if (!rowDate) return false;
+      return (
+        rowDate.getFullYear() === target.getFullYear() &&
+        rowDate.getMonth() === target.getMonth() &&
+        rowDate.getDate() === target.getDate() &&
+        cellToString(row[2]).trim().toLowerCase() === desc &&
+        Math.abs(parseFloat(cellToString(row[5]).replace(/,/g, "")) - monto) < 0.005
+      );
+    });
+  }
+
+  /**
+   * Removes a row previously written by the bot. Verifies the row still holds the same
+   * description and amount first, so manual edits or shifted rows are never deleted by mistake.
+   */
+  async deleteWrittenRow(written: WrittenRow): Promise<"deleted" | "mismatch"> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    try {
+      const montoCol = written.sheet === "GASTOS" ? 5 : 4;
+      const current = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${written.sheet}!A${written.row}:K${written.row}`,
+      });
+      const row = ((current.data.values as unknown[][]) || [])[0] || [];
+      const sameDesc =
+        cellToString(row[2]).trim().toLowerCase() === written.descripcion.trim().toLowerCase();
+      const sameMonto =
+        Math.abs(parseFloat(cellToString(row[montoCol]).replace(/,/g, "")) - written.monto) < 0.005;
+      if (!sameDesc || !sameMonto) return "mismatch";
+
+      const meta = await this.sheets.spreadsheets.get({
+        spreadsheetId: this.spreadsheetId,
+        fields: "sheets.properties(sheetId,title)",
+      });
+      const sheetId = meta.data.sheets?.find((s) => s.properties?.title === written.sheet)
+        ?.properties?.sheetId;
+      if (sheetId === undefined || sheetId === null) {
+        throw new Error(`Sheet ${written.sheet} not found`);
+      }
+
+      await this.sheets.spreadsheets.batchUpdate({
+        spreadsheetId: this.spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId,
+                  dimension: "ROWS",
+                  startIndex: written.row - 1,
+                  endIndex: written.row,
+                },
+              },
+            },
+          ],
+        },
+      });
+      this.gastosCache = null;
+      return "deleted";
+    } catch (error) {
+      Logger.error("Error deleting row from Sheets", error);
+      throw new SheetsAPIError(`Failed to delete row: ${getErrorMessage(error)}`);
     }
   }
 
@@ -342,11 +499,7 @@ export class SheetsClient {
       throw new SheetsAPIError("Sheets client not initialized");
     }
     try {
-      const response = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: "GASTOS!A:P",
-      });
-      const rows = (response.data.values as unknown[][]) || [];
+      const rows = await this.getGastosRows();
       const byDay = new Map<number, number>();
 
       for (const row of rows) {
@@ -355,7 +508,7 @@ export class SheetsClient {
         let rowDay = Number(row[15]);
 
         if (!rowYear || !rowMonth) {
-          const parts = String(row[0] ?? "").split("/");
+          const parts = (cellToString(row[0]) || "").split("/");
           if (parts.length === 3) {
             rowDay = Number(parts[0]);
             rowMonth = Number(parts[1]);
@@ -364,7 +517,7 @@ export class SheetsClient {
         }
 
         if (rowYear !== year || rowMonth !== month) continue;
-        const monto = parseFloat(String(row[9] ?? "0"));
+        const monto = parseFloat(cellToString(row[9]) || "0");
         if (isNaN(monto) || monto <= 0) continue;
 
         byDay.set(rowDay, (byDay.get(rowDay) ?? 0) + monto);
@@ -387,35 +540,26 @@ export class SheetsClient {
       throw new SheetsAPIError("Sheets client not initialized");
     }
     try {
-      const response = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: "GASTOS!A:P",
-      });
-      const rows = (response.data.values as unknown[][]) || [];
+      const rows = await this.getGastosRows();
       Logger.log(`getGastosDelMes: ${rows.length} rows returned, filtering for ${year}/${month}`);
-      if (rows.length > 1) {
-        Logger.log(
-          `getGastosDelMes sample row[1]: length=${rows[1]?.length}, [0]=${rows[1]?.[0]}, [13]=${rows[1]?.[13]}, [14]=${rows[1]?.[14]}`
-        );
-      }
       const result: { macro_categoria: string; monto: number; moneda: string }[] = [];
       for (const row of rows) {
         let rowYear = Number(row[13]);
         let rowMonth = Number(row[14]);
         if (!rowYear || !rowMonth) {
-          const parts = String(row[0] ?? "").split("/");
+          const parts = (cellToString(row[0]) || "").split("/");
           if (parts.length === 3) {
             rowYear = Number(parts[2]);
             rowMonth = Number(parts[1]);
           }
         }
         if (rowYear !== year || rowMonth !== month) continue;
-        const monto = parseFloat(String(row[9] ?? "0"));
+        const monto = parseFloat(cellToString(row[9]) || "0");
         if (isNaN(monto) || monto <= 0) continue;
         result.push({
-          macro_categoria: String(row[3] ?? "Sin categoría").trim(),
+          macro_categoria: (cellToString(row[3]) || "Sin categoría").trim(),
           monto,
-          moneda: String(row[6] ?? "ARS").trim(),
+          moneda: (cellToString(row[6]) || "ARS").trim(),
         });
       }
       return result;
@@ -495,8 +639,8 @@ export class SheetsClient {
         const rowNumeroMes = Number(row[2]);
         if (rowYear !== year || rowNumeroMes !== month) continue;
 
-        const netoRaw = String(row[5] ?? "").replace(/[$,\s]/g, "");
-        const acumuladoRaw = String(row[6] ?? "").replace(/[$,\s]/g, "");
+        const netoRaw = (cellToString(row[5]) || "").replace(/[$,\s]/g, "");
+        const acumuladoRaw = (cellToString(row[6]) || "").replace(/[$,\s]/g, "");
         const neto_mes = parseFloat(netoRaw);
         const acumulado = parseFloat(acumuladoRaw);
         if (isNaN(neto_mes) || isNaN(acumulado)) return null;

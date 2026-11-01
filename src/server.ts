@@ -153,6 +153,7 @@ app.post("/webhook", async (req: Request, res: Response) => {
       audioProcessor,
       aiClientManager,
       userPreferences,
+      sheetsClient,
     });
 
     res.status(200).send("OK");

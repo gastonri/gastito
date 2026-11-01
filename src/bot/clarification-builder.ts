@@ -150,12 +150,17 @@ export class ClarificationBuilder {
   /**
    * Builds a yes/no keyboard to confirm destructive commands (/reset, /exit).
    */
-  static buildDangerKeyboard(action: "reset" | "exit"): InlineKeyboardMarkup {
+  static buildDangerKeyboard(action: "reset" | "exit" | "undo"): InlineKeyboardMarkup {
     return {
       inline_keyboard: [
         [
           {
-            text: action === "reset" ? Buttons.yesReset : Buttons.yesExit,
+            text:
+              action === "reset"
+                ? Buttons.yesReset
+                : action === "undo"
+                  ? Buttons.yesUndo
+                  : Buttons.yesExit,
             callback_data: `dz_${action}`,
           },
           { text: Buttons.no, callback_data: "dz_no" },

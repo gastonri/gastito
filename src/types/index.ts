@@ -93,12 +93,21 @@ export interface TransactionResult {
   razonamiento?: string;
   alerta?: string;
   usa_contexto?: boolean;
+  duplicado?: boolean;
 }
 
 // Context Types
 export interface ConversationContext {
   tipo: TransactionType;
   datos: TransactionData;
+}
+
+/** A row written to the spreadsheet, kept so the last confirmation can be undone. */
+export interface WrittenRow {
+  sheet: "GASTOS" | "INGRESOS";
+  row: number;
+  descripcion: string;
+  monto: number;
 }
 
 // Config Types
@@ -314,10 +323,7 @@ export interface AIErrorResponse {
   suggestions?: string[];
 }
 
-export type AIResponse =
-  | AITransactionResponse
-  | AIClarificationResponse
-  | AIErrorResponse;
+export type AIResponse = AITransactionResponse | AIClarificationResponse | AIErrorResponse;
 
 export interface ConversationSession {
   sessionId: string;

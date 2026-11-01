@@ -58,6 +58,10 @@ export class MessageBuilder {
         alerta;
     }
 
+    if (data.duplicado) {
+      mensaje += `\n\n${Messages.duplicateWarning}`;
+    }
+
     if (data.usa_contexto) {
       mensaje += `\n\n${Messages.usingContext}`;
     }
@@ -95,6 +99,7 @@ export class MessageBuilder {
       item += isIngreso ? `   ${d.categoria}` : `   ${d.macro_categoria} → ${d.subcategoria}`;
       if (extras.length) item += ` · ${extras.join(" · ")}`;
       item += `\n`;
+      if (g.duplicado) item += `   ${Messages.duplicateShort}\n`;
 
       if (mensaje.length + item.length + footer.length > this.MAX_MESSAGE_LENGTH) {
         mensaje += `${sep}\n… y ${gastos.length - shown} más (se guardan igual al confirmar)\n`;

@@ -8,6 +8,7 @@ import type {
   ConversationMessage,
   ClarificationQuestion,
   TransactionResult,
+  WrittenRow,
 } from "../types";
 
 const SESSION_TTL = 60 * 60; // 1 hour in seconds
@@ -127,6 +128,10 @@ class SessionManager {
     return `session:lock:${chatId}`;
   }
 
+  private lastBatchKey(chatId: number): string {
+    return `last_batch:${chatId}`;
+  }
+
   private lastConfirmedKey(chatId: number): string {
     return `last_confirmed:${chatId}`;
   }
@@ -202,10 +207,7 @@ class SessionManager {
     await this.saveSession(session);
   }
 
-  async setPendingQuestions(
-    chatId: number,
-    questions: ClarificationQuestion[]
-  ): Promise<void> {
+  async setPendingQuestions(chatId: number, questions: ClarificationQuestion[]): Promise<void> {
     const session = await this.getOrCreateSession(chatId);
     session.pendingQuestions = questions;
     await this.saveSession(session);
@@ -230,10 +232,7 @@ class SessionManager {
     Logger.log(`Session deleted for chat ${chatId}`);
   }
 
-  async saveLastConfirmed(
-    chatId: number,
-    transaction: TransactionResult
-  ): Promise<void> {
+  async saveLastConfirmed(chatId: number, transaction: TransactionResult): Promise<void> {
     await this.ensureConnected();
     const key = this.lastConfirmedKey(chatId);
     const ttl = 24 * 60 * 60; // 24 hours
@@ -263,6 +262,23 @@ class SessionManager {
     await this.ensureConnected();
     const key = this.lastConfirmedKey(chatId);
     await this.redis.del(key);
+  }
+
+  /** Rows written by the last confirmation, so /deshacer can remove them. */
+  async saveLastBatch(chatId: number, rows: WrittenRow[]): Promise<void> {
+    await this.ensureConnected();
+    await this.redis.setex(this.lastBatchKey(chatId), 24 * 60 * 60, JSON.stringify(rows));
+  }
+
+  async getLastBatch(chatId: number): Promise<WrittenRow[] | null> {
+    await this.ensureConnected();
+    const data = await this.redis.get(this.lastBatchKey(chatId));
+    return data ? (JSON.parse(data) as WrittenRow[]) : null;
+  }
+
+  async clearLastBatch(chatId: number): Promise<void> {
+    await this.ensureConnected();
+    await this.redis.del(this.lastBatchKey(chatId));
   }
 
   async acquireLock(chatId: number): Promise<boolean> {

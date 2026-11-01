@@ -14,6 +14,7 @@ export const handleAyuda: CommandHandler = async ({ chatId, telegramClient }) =>
       "`/comparar <mes>` o `/comparar <mes1> <mes2>` — compara meses específicos\n" +
       "`/presupuesto` — gasto del mes vs. presupuesto por categoría\n" +
       "`/presupuesto <mes>` o `/presupuesto <mes> <año>` — presupuesto de un mes específico\n" +
+      "`/deshacer` — borra de la planilla lo último que confirmaste (hasta 24 hs, pide confirmación)\n" +
       "`/contexto` — muestra el último registro confirmado\n" +
       "`/model` — muestra el modelo de IA actual\n" +
       "`/model gemini` o `/model anthropic` — cambia el modelo\n" +

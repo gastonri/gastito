@@ -4,6 +4,8 @@ import { MessageHandlers } from "./handlers";
 import { MessageBuilder } from "./message-builder";
 import { AudioProcessor } from "../services/audio-processor";
 import { AIClientManager } from "../ai/client";
+import { SheetsClient } from "../sheets/client";
+import { Logger } from "../utils/logger";
 import { UserPreferencesService } from "../services/user-preferences";
 import { pendingOperations } from "../services/pending-operations";
 import { sendProcessingError, UserFacingError } from "./error-handler";
@@ -18,6 +20,7 @@ export interface MessageProcessorContext {
   audioProcessor: AudioProcessor;
   aiClientManager: AIClientManager;
   userPreferences: UserPreferencesService;
+  sheetsClient: SheetsClient;
 }
 
 /** Checks if a single-result response is modifying an existing pending operation. */
@@ -32,6 +35,24 @@ async function isModifyingPending(results: TransactionResult[], chatId: number):
     return true;
 
   return false;
+}
+
+/** Marks expenses that already exist in the sheet. Best effort: never blocks the flow. */
+async function flagDuplicates(
+  results: TransactionResult[],
+  sheetsClient: SheetsClient
+): Promise<void> {
+  for (const result of results) {
+    if (result.tipo !== "GASTO") continue;
+    try {
+      result.duplicado = await sheetsClient.findDuplicateGasto(result.datos);
+    } catch (error) {
+      Logger.warn(
+        `Duplicate check skipped: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return;
+    }
+  }
 }
 
 /**
@@ -49,6 +70,7 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     audioProcessor,
     aiClientManager,
     userPreferences,
+    sheetsClient,
   } = ctx;
   let loadingMessageId: number | null = null;
 
@@ -89,6 +111,8 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     if (!results || results.length === 0) {
       throw new Error("No result from message handler");
     }
+
+    await flagDuplicates(results, sheetsClient);
 
     const isModification = await isModifyingPending(results, chatId);
     let operationId: string;

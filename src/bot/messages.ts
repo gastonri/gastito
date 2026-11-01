@@ -60,6 +60,25 @@ export const Messages = {
   dangerAborted: "👍 Listo, no cambié nada.",
   dangerAbortedToast: "Sin cambios",
 
+  // Undo
+  undoNothing:
+    "🤷 No tengo nada para deshacer.\n\nSolo puedo deshacer la última confirmación, dentro de las 24 horas.",
+  undoAsk: (lines: string) =>
+    `↩️ *¿Deshacer el último registro?*\n\nSe van a borrar de la planilla:\n${lines}`,
+  undoDone: (deleted: number) =>
+    deleted === 1
+      ? "↩️ *Listo, borré el registro de la planilla.*"
+      : `↩️ *Listo, borré ${deleted} registros de la planilla.*`,
+  undoPartial: (deleted: number, skipped: number) =>
+    `⚠️ Borré ${deleted} registro(s), pero ${skipped} no los toqué porque cambiaron en la planilla. Revisalos a mano.`,
+  undoFailed: "❌ No pude deshacer. Revisá la planilla a mano.",
+  undoToast: "Deshecho",
+
+  // Duplicates
+  duplicateWarning:
+    "⚠️ *Posible duplicado:* ya hay un gasto con la misma fecha, monto y descripción en la planilla.",
+  duplicateShort: "⚠️ posible duplicado",
+
   // Budget
   budgetLine: (categoria: string, pct: number, gastado: string, presupuesto: string) => {
     const icon = pct >= 100 ? "🚨" : pct >= 80 ? "⚠️" : "📊";
@@ -75,5 +94,6 @@ export const Buttons = {
   retry: "🔁 Reintentar",
   yesReset: "Sí, limpiar",
   yesExit: "Sí, terminar",
+  yesUndo: "Sí, deshacer",
   no: "No, volver",
 };

@@ -13,6 +13,7 @@ import { getErrorMessage } from "../utils/text";
 import { formatMoney } from "../utils/format";
 import { Messages } from "./messages";
 import type { InlineKeyboardMarkup } from "./clarification-builder";
+import type { WrittenRow } from "../types";
 
 export class CallbackHandlers {
   private conversationHandler: ConversationHandler | null = null;
@@ -62,16 +63,17 @@ export class CallbackHandlers {
     Logger.log("Attempting to write data: " + JSON.stringify(storedData));
 
     const saved: typeof storedData = [];
+    const written: WrittenRow[] = [];
     const failed: { gasto: (typeof storedData)[0]; error: unknown }[] = [];
 
     for (const gasto of storedData) {
       try {
         Validator.validateTransaction(gasto);
-        if (gasto.tipo === "INGRESO") {
-          await this.sheetsClient.writeIngreso(gasto.datos);
-        } else {
-          await this.sheetsClient.writeGasto(gasto.datos);
-        }
+        const row =
+          gasto.tipo === "INGRESO"
+            ? await this.sheetsClient.writeIngreso(gasto.datos)
+            : await this.sheetsClient.writeGasto(gasto.datos);
+        written.push(row);
         saved.push(gasto);
       } catch (error) {
         Logger.error("ERROR writing gasto to sheet", error);
@@ -92,6 +94,7 @@ export class CallbackHandlers {
     });
 
     try {
+      await sessionManager.saveLastBatch(chatId, written);
       await sessionManager.saveLastConfirmed(chatId, saved[saved.length - 1]);
       await sessionManager.deleteSession(chatId);
     } catch (error) {
@@ -142,6 +145,11 @@ export class CallbackHandlers {
     messageId: number,
     data: string
   ): Promise<void> {
+    if (data === "dz_undo") {
+      await this.handleUndo(callbackId, chatId, messageId);
+      return;
+    }
+
     if (data === "dz_reset" || data === "dz_exit") {
       await sessionManager.deleteSession(chatId);
       contextManager.clearContext(chatId);
@@ -156,6 +164,40 @@ export class CallbackHandlers {
 
     await this.sendOrEditMessage(chatId, messageId, Messages.dangerAborted);
     await this.telegramClient.answerCallbackQuery(callbackId, Messages.dangerAbortedToast);
+  }
+
+  private async handleUndo(callbackId: string, chatId: number, messageId: number): Promise<void> {
+    const batch = await sessionManager.getLastBatch(chatId);
+    if (!batch || batch.length === 0) {
+      await this.sendOrEditMessage(chatId, messageId, Messages.undoNothing);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.dangerAbortedToast);
+      return;
+    }
+
+    let deleted = 0;
+    let skipped = 0;
+    try {
+      // Delete bottom-up so earlier row numbers stay valid after each deletion.
+      for (const written of [...batch].sort((a, b) => b.row - a.row)) {
+        const result = await this.sheetsClient.deleteWrittenRow(written);
+        if (result === "deleted") deleted++;
+        else skipped++;
+      }
+    } catch (error) {
+      Logger.error(`Undo failed for chat ${chatId}: ${getErrorMessage(error)}`);
+      await this.sendOrEditMessage(chatId, messageId, Messages.undoFailed);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.saveFailedToast);
+      return;
+    }
+
+    await sessionManager.clearLastBatch(chatId);
+    await sessionManager.clearLastConfirmed(chatId);
+    contextManager.clearContext(chatId);
+
+    let text = deleted > 0 ? Messages.undoDone(deleted) : Messages.undoFailed;
+    if (skipped > 0) text += `\n\n${Messages.undoPartial(deleted, skipped)}`;
+    await this.sendOrEditMessage(chatId, messageId, text);
+    await this.telegramClient.answerCallbackQuery(callbackId, Messages.undoToast);
   }
 
   /**

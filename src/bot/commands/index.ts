@@ -8,6 +8,7 @@ import { handleGrafico } from "./grafico";
 import { handleComparar } from "./comparar";
 import { handlePresupuesto } from "./presupuesto";
 import { handleModel } from "./model";
+import { handleDeshacer } from "./deshacer";
 
 const COMMANDS: [string, CommandHandler][] = [
   ["/exit", handleExit],
@@ -20,6 +21,7 @@ const COMMANDS: [string, CommandHandler][] = [
   ["/comparar", handleComparar],
   ["/presupuesto", handlePresupuesto],
   ["/model", handleModel],
+  ["/deshacer", handleDeshacer],
 ];
 
 /**
