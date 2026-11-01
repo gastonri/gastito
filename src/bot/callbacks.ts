@@ -20,7 +20,9 @@ import {
 } from "./confirmation";
 import { INGRESO_CATEGORIAS } from "../types";
 import { extractTextWithoutEmoji } from "../utils/text";
-import { escapeMarkdown } from "../utils/format";
+import { escapeMarkdown, getArgentinaToday } from "../utils/format";
+import { computeBudgetLines } from "../services/budget";
+import { MONTH_NAMES_ES } from "../utils/months";
 import type { InlineKeyboardMarkup } from "./clarification-builder";
 import type { WrittenRow } from "../types";
 
@@ -353,37 +355,31 @@ export class CallbackHandlers {
    * a failure here must not affect the success message.
    */
   private async buildBudgetNote(
-    saved: { tipo: string; datos: { macro_categoria?: string } }[]
+    saved: { tipo: string; datos: { fecha?: string; macro_categoria?: string } }[]
   ): Promise<string> {
     try {
-      const categorias = [
-        ...new Set(
-          saved
-            .filter((g) => g.tipo === "GASTO" && g.datos.macro_categoria)
-            .map((g) => g.datos.macro_categoria as string)
-        ),
-      ];
-      if (categorias.length === 0) return "";
+      if (!saved.some((g) => g.tipo === "GASTO" && g.datos.macro_categoria)) return "";
 
       const presupuestos = await this.sheetsClient.getPresupuestos();
-      const relevantes = presupuestos.filter((p) => categorias.includes(p.macro_categoria));
-      if (relevantes.length === 0) return "";
+      if (presupuestos.length === 0) return "";
 
-      const now = new Date();
-      const gastos = await this.sheetsClient.getGastosDelMes(now.getFullYear(), now.getMonth() + 1);
+      const today = getArgentinaToday().date;
+      const lines = await computeBudgetLines(
+        saved,
+        presupuestos,
+        (year, month) => this.sheetsClient.getGastosDelMes(year, month),
+        today
+      );
 
-      return relevantes
-        .filter((p) => p.monto > 0)
-        .map((p) => {
-          const gastado = gastos
-            .filter((g) => g.macro_categoria === p.macro_categoria)
-            .reduce((sum, g) => sum + g.monto, 0);
-          const pct = Math.round((gastado / p.monto) * 100);
+      return lines
+        .map((l) => {
+          const esMesActual = l.year === today.getFullYear() && l.month === today.getMonth() + 1;
           return Messages.budgetLine(
-            p.macro_categoria,
-            pct,
-            formatMoney(gastado),
-            formatMoney(p.monto)
+            l.categoria,
+            l.pct,
+            formatMoney(l.gastado),
+            formatMoney(l.presupuesto),
+            esMesActual ? undefined : `${MONTH_NAMES_ES[l.month - 1]} ${l.year}`
           );
         })
         .join("\n");

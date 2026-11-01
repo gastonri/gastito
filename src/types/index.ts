@@ -112,6 +112,8 @@ export interface WrittenRow {
   row: number;
   descripcion: string;
   monto: number;
+  /** DD/MM/YYYY, used to find the row again if the sheet gets re-sorted. */
+  fecha?: string;
 }
 
 // Config Types

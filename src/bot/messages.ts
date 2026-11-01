@@ -94,9 +94,17 @@ export const Messages = {
   duplicateShort: "⚠️ posible duplicado",
 
   // Budget
-  budgetLine: (categoria: string, pct: number, gastado: string, presupuesto: string) => {
+  /** `mes` is shown only when the expense belongs to a month other than the current one. */
+  budgetLine: (
+    categoria: string,
+    pct: number,
+    gastado: string,
+    presupuesto: string,
+    mes?: string
+  ) => {
     const icon = pct >= 100 ? "🚨" : pct >= 80 ? "⚠️" : "📊";
-    return `${icon} ${escapeMarkdown(categoria)}: ${pct}% del presupuesto ($${gastado} / $${presupuesto})`;
+    const mesTexto = mes ? ` (${mes})` : "";
+    return `${icon} ${escapeMarkdown(categoria)}${mesTexto}: ${pct}% del presupuesto ($${gastado} / $${presupuesto})`;
   },
 };
 

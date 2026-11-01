@@ -6,6 +6,7 @@ import { parseDate } from "../services/validator";
 import { extractTextWithoutEmoji, getErrorMessage, cellToString } from "../utils/text";
 import { parseCotizacionRows, pickCotizacion } from "../utils/cotizacion";
 import { MONTH_NAMES_ES } from "../utils/months";
+import { getArgentinaToday } from "../utils/format";
 
 /**
  * Formats a Date object as DD/MM/YYYY string for Google Sheets
@@ -30,6 +31,14 @@ function roundMoney(value: unknown): number {
   return isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
 
+/** Days since 1899-12-30, the serial number Sheets uses for dates (local calendar day). */
+function toSheetsSerial(date: Date): number {
+  return Math.round(
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(1899, 11, 30)) /
+      86400000
+  );
+}
+
 const GASTOS_CACHE_TTL_MS = 60 * 1000;
 
 export class SheetsClient {
@@ -37,6 +46,7 @@ export class SheetsClient {
   private sheets: sheets_v4.Sheets | null = null;
   private spreadsheetId: string;
   private gastosCache: { rows: unknown[][]; at: number } | null = null;
+  private sheetIds: Map<string, number> | null = null;
 
   constructor() {
     this.spreadsheetId = config.sheets.spreadsheetId;
@@ -228,6 +238,42 @@ export class SheetsClient {
     }
   }
 
+  /**
+   * Resolves (and caches) the numeric id of a sheet by its title, as needed by batchUpdate.
+   */
+  private async getSheetId(title: string): Promise<number> {
+    if (!this.sheets) {
+      throw new SheetsAPIError("Sheets client not initialized");
+    }
+    const cached = this.sheetIds?.get(title);
+    if (cached !== undefined) return cached;
+
+    const meta = await this.sheets.spreadsheets.get({
+      spreadsheetId: this.spreadsheetId,
+      fields: "sheets.properties(sheetId,title)",
+    });
+    this.sheetIds = new Map(
+      (meta.data.sheets ?? []).flatMap((sheet) =>
+        sheet.properties?.title != null && sheet.properties.sheetId != null
+          ? [[sheet.properties.title, sheet.properties.sheetId] as [string, number]]
+          : []
+      )
+    );
+    const id = this.sheetIds.get(title);
+    if (id === undefined) {
+      throw new Error(`No existe la hoja "${title}"`);
+    }
+    return id;
+  }
+
+  /**
+   * Writes one expense as a SINGLE batchUpdate (atomic), so a script that re-sorts the sheet
+   * after any change can never move the row between two writes.
+   *
+   * The app only writes input data. Derived columns (imp_mensual, año, mes, día) are copied as
+   * formulas from row 2 of the PLANTILLA_GASTOS sheet, so how they are calculated is defined in
+   * the spreadsheet, not in this code.
+   */
   async writeGasto(data: TransactionData): Promise<WrittenRow> {
     if (!this.sheets) {
       throw new SheetsAPIError("Sheets client not initialized");
@@ -245,20 +291,20 @@ export class SheetsClient {
       let fecha: Date;
       if (typeof data.fecha === "string") {
         const parsedDate = parseDate(data.fecha);
-        fecha = parsedDate || new Date();
+        fecha = parsedDate || getArgentinaToday().date;
       } else {
-        fecha = new Date();
+        fecha = getArgentinaToday().date;
       }
 
       const cuotas = parseInt(String(data.cuotas || 1), 10);
       const nCuota = parseInt(String(data.n_cuota || 1), 10);
       const miParte = data.mi_parte !== undefined ? data.mi_parte : 100;
 
-      // imp_mensual feeds CUADERNO_CONTABLE in ARS, so USD expenses are converted using
-      // the rate in force on the expense date ("Dolar Tarjeta" by default, or "Dolar Blue").
+      // tipo_cambio (col Q) is the ARS-per-USD rate used; imp_mensual is derived from it by
+      // the sheet. "Dolar Tarjeta" by default, or "Dolar Blue".
       const moneda = data.moneda || "ARS";
       const tipoDolar = data.cotizacion === "BLUE" ? "BLUE" : "TARJETA";
-      let tipoCambio = 1;
+      let tipoCambio: number | null = null;
       let notas = (data.notas || "").trim();
       if (moneda === "USD") {
         const cotizacion = await this.getCotizacionDolar(tipoDolar, fecha);
@@ -271,49 +317,96 @@ export class SheetsClient {
         const nota = `USD a dólar ${tipoDolar === "BLUE" ? "blue" : "tarjeta"} $${cotizacion}`;
         notas = notas ? `${notas} · ${nota}` : nota;
       }
-      const impMensualFormula =
-        tipoCambio === 1
-          ? `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow}),"")`
-          : `=IFERROR(IF(H${newRow}>0,F${newRow}/H${newRow},F${newRow})*${tipoCambio},"")`;
 
-      // Write A:I (fecha through n_cuota)
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A${newRow}:I${newRow}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: {
-          values: [
-            [
-              formatDateForSheets(fecha),
-              (data.persona || "").trim(),
-              (data.descripcion || "").trim(),
-              (data.macro_categoria || "").trim(),
-              subcategoriaConEmoji,
-              roundMoney(data.monto),
-              moneda,
-              String(cuotas),
-              String(nCuota),
-            ],
-          ],
+      const [gastosId, plantillaId] = await Promise.all([
+        this.getSheetId(sheetName),
+        this.getSheetId("PLANTILLA_GASTOS"),
+      ]);
+
+      const row = newRow - 1; // zero-based
+      const text = (v: string) => ({ userEnteredValue: { stringValue: v } });
+      const num = (v: number) => ({ userEnteredValue: { numberValue: v } });
+      const copyFormula = (startColumn: number, endColumn: number) => ({
+        copyPaste: {
+          source: {
+            sheetId: plantillaId,
+            startRowIndex: 1,
+            endRowIndex: 2,
+            startColumnIndex: startColumn,
+            endColumnIndex: endColumn,
+          },
+          destination: {
+            sheetId: gastosId,
+            startRowIndex: row,
+            endRowIndex: row + 1,
+            startColumnIndex: startColumn,
+            endColumnIndex: endColumn,
+          },
+          pasteType: "PASTE_FORMULA",
         },
       });
 
-      // Write J:P (imp_mensual through dia)
-      await this.sheets.spreadsheets.values.update({
+      await this.sheets.spreadsheets.batchUpdate({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!J${newRow}:P${newRow}`,
-        valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [
-            [
-              impMensualFormula,
-              String(miParte),
-              (data.link || "").trim(),
-              notas,
-              fecha.getFullYear(),
-              fecha.getMonth() + 1,
-              fecha.getDate(),
-            ],
+          requests: [
+            // Derived columns: J (imp_mensual) and N:P (año, mes, dia) come from the template.
+            copyFormula(9, 10),
+            copyFormula(13, 16),
+            // A: fecha as a real date (serial number) with the sheet's date format.
+            {
+              updateCells: {
+                start: { sheetId: gastosId, rowIndex: row, columnIndex: 0 },
+                rows: [
+                  {
+                    values: [
+                      {
+                        ...num(toSheetsSerial(fecha)),
+                        userEnteredFormat: { numberFormat: { type: "DATE", pattern: "d/M/yyyy" } },
+                      },
+                    ],
+                  },
+                ],
+                fields: "userEnteredValue,userEnteredFormat.numberFormat",
+              },
+            },
+            // B:I
+            {
+              updateCells: {
+                start: { sheetId: gastosId, rowIndex: row, columnIndex: 1 },
+                rows: [
+                  {
+                    values: [
+                      text((data.persona || "").trim()),
+                      text((data.descripcion || "").trim()),
+                      text((data.macro_categoria || "").trim()),
+                      text(subcategoriaConEmoji),
+                      num(roundMoney(data.monto)),
+                      text(moneda),
+                      num(cuotas),
+                      num(nCuota),
+                    ],
+                  },
+                ],
+                fields: "userEnteredValue",
+              },
+            },
+            // K:M
+            {
+              updateCells: {
+                start: { sheetId: gastosId, rowIndex: row, columnIndex: 10 },
+                rows: [{ values: [num(miParte), text((data.link || "").trim()), text(notas)] }],
+                fields: "userEnteredValue",
+              },
+            },
+            // Q: tipo_cambio (empty for ARS)
+            {
+              updateCells: {
+                start: { sheetId: gastosId, rowIndex: row, columnIndex: 16 },
+                rows: [{ values: [tipoCambio === null ? {} : num(tipoCambio)] }],
+                fields: "userEnteredValue",
+              },
+            },
           ],
         },
       });
@@ -325,6 +418,7 @@ export class SheetsClient {
         row: newRow,
         descripcion: (data.descripcion || "").trim(),
         monto: roundMoney(data.monto),
+        fecha: formatDateForSheets(fecha),
       };
     } catch (error) {
       Logger.error("Error writing GASTO to Sheets", error);
@@ -344,9 +438,9 @@ export class SheetsClient {
       let fecha: Date;
       if (typeof data.fecha === "string") {
         const parsedDate = parseDate(data.fecha);
-        fecha = parsedDate || new Date();
+        fecha = parsedDate || getArgentinaToday().date;
       } else {
-        fecha = new Date();
+        fecha = getArgentinaToday().date;
       }
 
       await this.sheets.spreadsheets.values.update({
@@ -378,6 +472,7 @@ export class SheetsClient {
         row: newRow,
         descripcion: (data.descripcion || "").trim(),
         monto: roundMoney(data.monto),
+        fecha: formatDateForSheets(fecha),
       };
     } catch (error) {
       Logger.error("Error writing INGRESO to Sheets", error);
@@ -431,7 +526,7 @@ export class SheetsClient {
   /** True if GASTOS already has an entry with the same day, amount and description. */
   async findDuplicateGasto(data: TransactionData): Promise<boolean> {
     const rows = await this.getGastosRows();
-    const target = (data.fecha && parseDate(data.fecha)) || new Date();
+    const target = (data.fecha && parseDate(data.fecha)) || getArgentinaToday().date;
     const desc = (data.descripcion || "").trim().toLowerCase();
     const monto = Number(data.monto || 0);
 
@@ -449,8 +544,9 @@ export class SheetsClient {
   }
 
   /**
-   * Removes a row previously written by the bot. Verifies the row still holds the same
-   * description and amount first, so manual edits or shifted rows are never deleted by mistake.
+   * Removes a row previously written by the bot. The sheet can be re-sorted by a script, so the
+   * stored row number may be stale: the row is located by its content (description, amount and
+   * date) and the stored number is only used as a first guess.
    */
   async deleteWrittenRow(written: WrittenRow): Promise<"deleted" | "mismatch"> {
     if (!this.sheets) {
@@ -458,39 +554,56 @@ export class SheetsClient {
     }
     try {
       const montoCol = written.sheet === "GASTOS" ? 5 : 4;
-      const current = await this.sheets.spreadsheets.values.get({
+      const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: `${written.sheet}!A${written.row}:K${written.row}`,
+        range: `${written.sheet}!A:F`,
       });
-      const row = ((current.data.values as unknown[][]) || [])[0] || [];
-      const sameDesc =
-        cellToString(row[2]).trim().toLowerCase() === written.descripcion.trim().toLowerCase();
-      const sameMonto =
-        Math.abs(parseFloat(cellToString(row[montoCol]).replace(/,/g, "")) - written.monto) < 0.005;
-      if (!sameDesc || !sameMonto) return "mismatch";
+      const rows = (response.data.values as unknown[][]) || [];
 
-      const meta = await this.sheets.spreadsheets.get({
-        spreadsheetId: this.spreadsheetId,
-        fields: "sheets.properties(sheetId,title)",
-      });
-      const sheetId = meta.data.sheets?.find((s) => s.properties?.title === written.sheet)
-        ?.properties?.sheetId;
-      if (sheetId === undefined || sheetId === null) {
-        throw new Error(`Sheet ${written.sheet} not found`);
+      const wantDesc = written.descripcion.trim().toLowerCase();
+      const wantDate = written.fecha ? parseDate(written.fecha) : null;
+      const matches = (index: number): boolean => {
+        const row = rows[index];
+        if (!row) return false;
+        if (cellToString(row[2]).trim().toLowerCase() !== wantDesc) return false;
+        if (
+          Math.abs(parseFloat(cellToString(row[montoCol]).replace(/,/g, "")) - written.monto) >=
+          0.005
+        )
+          return false;
+        if (wantDate) {
+          const rowDate = parseDate(cellToString(row[0]));
+          if (
+            !rowDate ||
+            rowDate.getFullYear() !== wantDate.getFullYear() ||
+            rowDate.getMonth() !== wantDate.getMonth() ||
+            rowDate.getDate() !== wantDate.getDate()
+          )
+            return false;
+        }
+        return true;
+      };
+
+      let index = written.row - 1;
+      if (!matches(index)) {
+        index = -1;
+        for (let i = rows.length - 1; i >= 1; i--) {
+          if (matches(i)) {
+            index = i;
+            break;
+          }
+        }
       }
+      if (index < 1) return "mismatch";
 
+      const sheetId = await this.getSheetId(written.sheet);
       await this.sheets.spreadsheets.batchUpdate({
         spreadsheetId: this.spreadsheetId,
         requestBody: {
           requests: [
             {
               deleteDimension: {
-                range: {
-                  sheetId,
-                  dimension: "ROWS",
-                  startIndex: written.row - 1,
-                  endIndex: written.row,
-                },
+                range: { sheetId, dimension: "ROWS", startIndex: index, endIndex: index + 1 },
               },
             },
           ],
