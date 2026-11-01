@@ -3,13 +3,12 @@ export interface CotizacionRow {
   precio: number;
 }
 
-/** Parses a number as shown by Sheets: "1898", "1891.5" or "1.891,5". */
+/**
+ * Parses a number as shown by our sheets, which use "." as the decimal separator
+ * ("1898", "1891.5"). Commas, if any, are thousands separators ("1,891.5").
+ */
 function parsePrecio(raw: string): number {
-  let s = raw.replace(/[$\s]/g, "");
-  if (s.includes(",")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  }
-  return parseFloat(s);
+  return parseFloat(raw.replace(/[$\s,]/g, ""));
 }
 
 /** Parses "4/6/2026 12:17:13" or "4/6/2026" (D/M/YYYY) to a local date at midnight. */

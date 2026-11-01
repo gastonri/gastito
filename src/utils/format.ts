@@ -44,3 +44,25 @@ export function formatFecha(fecha: string | undefined, now: Date = new Date()): 
   const mm = String(parsed.getMonth() + 1).padStart(2, "0");
   return `${dd}/${mm}/${parsed.getFullYear()}`;
 }
+
+/** Today's date in Argentina's time zone (the server may run in UTC). */
+export function getArgentinaToday(now: Date = new Date()): { weekday: string; date: Date } {
+  const parts = new Intl.DateTimeFormat("es-AR", {
+    timeZone: TIME_ZONE,
+    weekday: "long",
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    weekday: get("weekday"),
+    date: new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day"))),
+  };
+}
+
+/** DD/MM/YYYY, optionally shifted by whole days. */
+export function formatDDMMYYYY(date: Date, shiftDays = 0): string {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate() + shiftDays);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}

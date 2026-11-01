@@ -24,6 +24,12 @@ import {
   WrittenRow,
 } from "../types";
 
+/** Amounts are written as plain numbers (the sheets use "." as decimal), rounded to cents. */
+function roundMoney(value: unknown): number {
+  const n = Number(value);
+  return isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
 const GASTOS_CACHE_TTL_MS = 60 * 1000;
 
 export class SheetsClient {
@@ -277,7 +283,7 @@ export class SheetsClient {
               (data.descripcion || "").trim(),
               (data.macro_categoria || "").trim(),
               subcategoriaConEmoji,
-              parseFloat(String(data.monto || 0)),
+              roundMoney(data.monto),
               moneda,
               String(cuotas),
               String(nCuota),
@@ -312,7 +318,7 @@ export class SheetsClient {
         sheet: "GASTOS",
         row: newRow,
         descripcion: (data.descripcion || "").trim(),
-        monto: parseFloat(String(data.monto || 0)),
+        monto: roundMoney(data.monto),
       };
     } catch (error) {
       Logger.error("Error writing GASTO to Sheets", error);
@@ -348,7 +354,7 @@ export class SheetsClient {
               (data.persona || "").trim(),
               (data.descripcion || "").trim(),
               (data.categoria || "").trim(),
-              parseFloat(String(data.monto || 0)),
+              roundMoney(data.monto),
               data.moneda || "ARS",
               (data.link || "").trim(),
               (data.notas || "").trim(),
@@ -365,7 +371,7 @@ export class SheetsClient {
         sheet: "INGRESOS",
         row: newRow,
         descripcion: (data.descripcion || "").trim(),
-        monto: parseFloat(String(data.monto || 0)),
+        monto: roundMoney(data.monto),
       };
     } catch (error) {
       Logger.error("Error writing INGRESO to Sheets", error);

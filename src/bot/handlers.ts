@@ -19,6 +19,9 @@ import { config } from "../config";
 import { UserPreferencesService } from "../services/user-preferences";
 import { mapTransactionIndices } from "../services/validator";
 import { ResponseParser } from "../services/response-parser";
+import { parseMontoAR } from "../utils/numbers";
+import { UserFacingError } from "./error-handler";
+import { Messages } from "./messages";
 
 export class MessageHandlers {
   constructor(
@@ -54,6 +57,7 @@ export class MessageHandlers {
       if (result.usa_contexto === undefined) {
         result.usa_contexto = contextoPrevio !== null;
       }
+      this.applyConfidenceAlert(result);
       result = this.applyDefaults(result, text, sheetsConfig);
       const mapped = mapTransactionIndices(result, sheetsConfig);
       mapped.datos.persona = this.resolvePersona(message);
@@ -88,12 +92,7 @@ export class MessageHandlers {
     const results = this.parseAIResponse(response);
 
     return results.map((result) => {
-      if (result.confianza === "BAJA" || (result.campos_faltantes && result.campos_faltantes.length > 0)) {
-        result.alerta = `⚠️ Confianza ${result.confianza}. Campos dudosos: ${result.campos_faltantes?.join(", ") || ""}`;
-      }
-      if (result.razonamiento) {
-        result.alerta = (result.alerta || "") + `\n\n💡 ${result.razonamiento}`;
-      }
+      this.applyConfidenceAlert(result);
       const mapped = mapTransactionIndices(result, sheetsConfig);
       mapped.datos.persona = this.resolvePersona(message);
       return mapped;
@@ -143,6 +142,7 @@ export class MessageHandlers {
       if (result.usa_contexto === undefined) {
         result.usa_contexto = contextoPrevio !== null;
       }
+      this.applyConfidenceAlert(result);
       result = this.applyDefaults(result, textoTranscrito, sheetsConfig);
       const mapped = mapTransactionIndices(result, sheetsConfig);
       mapped.datos.persona = this.resolvePersona(message);
@@ -217,6 +217,11 @@ export class MessageHandlers {
 
     const obj = parsed as Record<string, unknown>;
 
+    // The model found nothing to record (not a receipt, a greeting, etc.)
+    if (Array.isArray(obj.gastos) && obj.gastos.length === 0) {
+      throw new UserFacingError(Messages.noTransactionFound);
+    }
+
     // New format: { gastos: [...] }
     if (Array.isArray(obj.gastos) && obj.gastos.length > 0) {
       Logger.log(`Parsed ${obj.gastos.length} gasto(s) from response`);
@@ -232,23 +237,44 @@ export class MessageHandlers {
     throw new Error(`Formato de respuesta inesperado: ${cleaned.substring(0, 200)}`);
   }
 
+  /**
+   * Guardrail for amounts: if the model returned a string ("1.500", "$ 12.500,50") parse it the
+   * Argentine way, and if it returned nothing usable fall back to the first number in the text.
+   */
+  private normalizeMonto(result: TransactionResult, text: string): void {
+    const raw = result.datos.monto as unknown;
+    const parsed = typeof raw === "string" ? parseMontoAR(raw) : null;
+    if (parsed !== null) {
+      result.datos.monto = parsed;
+      return;
+    }
+    if (typeof raw === "number" && isFinite(raw) && raw > 0) return;
+
+    const fromText = parseMontoAR(text);
+    if (fromText !== null) result.datos.monto = fromText;
+  }
+
+  /** Flags uncertain extractions so the confirmation message warns the user. */
+  private applyConfidenceAlert(result: TransactionResult): void {
+    if (
+      result.confianza === "BAJA" ||
+      (result.campos_faltantes && result.campos_faltantes.length > 0)
+    ) {
+      result.alerta = `⚠️ Confianza ${result.confianza ?? "BAJA"}. Campos dudosos: ${result.campos_faltantes?.join(", ") || ""}`;
+    }
+  }
+
   private applyDefaults(
     result: TransactionResult,
     text: string,
     sheetsConfig: ConfigData
   ): TransactionResult {
-    if (result.tipo === "INGRESO") return this.applyIngresoDefaults(result, text);
+    this.normalizeMonto(result, text);
+    if (result.tipo === "INGRESO") return this.applyIngresoDefaults(result);
     return this.applyGastoDefaults(result, text, sheetsConfig);
   }
 
-  private applyIngresoDefaults(result: TransactionResult, text: string): TransactionResult {
-    if (!result.datos.monto || result.datos.monto === 0) {
-      const numberMatch = text.match(/(\d+(?:[.,]\d+)?)/);
-      if (numberMatch) {
-        result.datos.monto = parseFloat(numberMatch[1].replace(",", "."));
-      }
-    }
-
+  private applyIngresoDefaults(result: TransactionResult): TransactionResult {
     if (!result.datos.descripcion || result.datos.descripcion.trim() === "") {
       result.datos.descripcion = "Pendiente de confirmación";
     }
@@ -264,13 +290,6 @@ export class MessageHandlers {
     sheetsConfig: ConfigData
   ): TransactionResult {
     if (result.tipo !== "GASTO") return result;
-
-    if (!result.datos.monto || result.datos.monto === 0) {
-      const numberMatch = text.match(/(\d+(?:[.,]\d+)?)/);
-      if (numberMatch) {
-        result.datos.monto = parseFloat(numberMatch[1].replace(",", "."));
-      }
-    }
 
     if (!result.datos.descripcion || result.datos.descripcion.trim() === "") {
       result.datos.descripcion = "Pendiente de confirmación";
