@@ -6,7 +6,9 @@ import { AudioProcessor } from "../services/audio-processor";
 import { AIClientManager } from "../ai/client";
 import { UserPreferencesService } from "../services/user-preferences";
 import { pendingOperations } from "../services/pending-operations";
-import { sendProcessingError } from "./error-handler";
+import { sendProcessingError, UserFacingError } from "./error-handler";
+import { Messages } from "./messages";
+import { ClarificationBuilder } from "./clarification-builder";
 
 export interface MessageProcessorContext {
   message: TelegramMessage;
@@ -26,7 +28,8 @@ async function isModifyingPending(results: TransactionResult[], chatId: number):
 
   const result = results[0];
   if (result.usa_contexto) return true;
-  if (result.tipo === existingPending.tipo && result.datos.monto === existingPending.datos.monto) return true;
+  if (result.tipo === existingPending.tipo && result.datos.monto === existingPending.datos.monto)
+    return true;
 
   return false;
 }
@@ -53,76 +56,33 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     let results: TransactionResult[] | undefined;
 
     if (message.photo) {
-      loadingMessageId = await telegramClient.sendMessage(
-        chatId,
-        "📸 Paso 1/5: Iniciando análisis..."
-      );
-      await telegramClient.editMessage(
-        chatId,
-        loadingMessageId!,
-        "📸 Paso 2/5: Descargando imagen de Telegram..."
-      );
-
+      loadingMessageId = await telegramClient.sendMessage(chatId, Messages.loadingPhoto);
       results = await messageHandlers.handleImageMessage(message);
-
-      await telegramClient.editMessage(
-        chatId,
-        loadingMessageId!,
-        "📸 Paso 3/5: Preparando contexto..."
-      );
-      await telegramClient.editMessage(
-        chatId,
-        loadingMessageId!,
-        "📸 Paso 4/5: Analizando con IA (esto puede tardar)..."
-      );
-      await telegramClient.editMessage(
-        chatId,
-        loadingMessageId!,
-        "📸 Paso 5/5: Procesando resultados..."
-      );
     } else if (message.voice || message.audio) {
-      loadingMessageId = await telegramClient.sendMessage(
-        chatId,
-        "🎤 Paso 1/4: Transcribiendo audio..."
-      );
-      await telegramClient.editMessage(
-        chatId,
-        loadingMessageId!,
-        "🎤 Paso 2/4: Descargando audio de Telegram..."
-      );
+      loadingMessageId = await telegramClient.sendMessage(chatId, Messages.loadingAudio);
 
       const audioFile = message.voice || message.audio!;
       const audioData = await audioProcessor.downloadAudio(audioFile.file_id);
 
-      await telegramClient.editMessage(
-        chatId,
-        loadingMessageId!,
-        "🎤 Paso 3/4: Transcribiendo con IA (esto puede tardar)..."
-      );
       const userProvider = await userPreferences.getAIProvider(chatId);
       const aiClient = aiClientManager.getClient(userProvider);
       const textoTranscrito = await aiClient.transcribeAudio(audioData);
 
       if (!textoTranscrito || textoTranscrito.trim() === "") {
-        throw new Error(
-          "No se pudo transcribir el audio. Asegurate de que el audio sea claro y esté en español."
-        );
+        throw new UserFacingError(Messages.transcriptionFailed);
       }
 
       await telegramClient.editMessage(
         chatId,
         loadingMessageId!,
-        `🎤 *Transcripción:*\n\n"${textoTranscrito}"\n\nProcesando...`
+        Messages.transcription(textoTranscrito)
       );
       results = await messageHandlers.handleTextMessage({ ...message, text: textoTranscrito });
     } else if (message.text) {
-      loadingMessageId = await telegramClient.sendMessage(chatId, "💬 Procesando...");
+      loadingMessageId = await telegramClient.sendMessage(chatId, Messages.loadingText);
       results = await messageHandlers.handleTextMessage(message);
     } else {
-      await telegramClient.sendMessage(
-        chatId,
-        "❌ Solo puedo procesar texto, imágenes de comprobantes o audios."
-      );
+      await telegramClient.sendMessage(chatId, Messages.unsupportedMessage);
       return;
     }
 
@@ -139,14 +99,7 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       operationId = await pendingOperations.createOperation(results, chatId);
     }
 
-    const keyboard = {
-      inline_keyboard: [
-        [
-          { text: "✅ Confirmar", callback_data: `conf_${operationId}` },
-          { text: "🗑️ Cancelar", callback_data: `cancel_${operationId}` },
-        ],
-      ],
-    };
+    const keyboard = ClarificationBuilder.buildConfirmCancelKeyboard(operationId);
 
     const confirmationMessage =
       results.length === 1

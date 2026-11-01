@@ -1,8 +1,26 @@
 import { TransactionResult } from "../types";
+import { escapeMarkdown, formatAmount, formatMoney, formatFecha } from "../utils/format";
+import { Messages } from "./messages";
 
-function escapeMarkdown(text: string | undefined): string {
-  if (!text) return "";
-  return text.replace(/([_*`[])/g, "\\$1");
+function totalsFooter(items: TransactionResult[]): string {
+  const hasGasto = items.some((g) => g.tipo === "GASTO");
+  const hasIngreso = items.some((g) => g.tipo === "INGRESO");
+  const totalGastos = items
+    .filter((g) => g.tipo === "GASTO")
+    .reduce((sum, g) => sum + (g.datos.monto || 0), 0);
+  const totalIngresos = items
+    .filter((g) => g.tipo === "INGRESO")
+    .reduce((sum, g) => sum + (g.datos.monto || 0), 0);
+  const moneda = items[0]?.datos.moneda || "ARS";
+
+  if (hasGasto && hasIngreso) {
+    return (
+      `Ingresos: $${formatMoney(totalIngresos)} ${moneda}\n` +
+      `Gastos: $${formatMoney(totalGastos)} ${moneda}\n` +
+      `Neto: $${formatMoney(totalIngresos - totalGastos)} ${moneda}`
+    );
+  }
+  return `Total: $${formatMoney(hasIngreso ? totalIngresos : totalGastos)} ${moneda}`;
 }
 
 export class MessageBuilder {
@@ -16,10 +34,10 @@ export class MessageBuilder {
 
     if (data.tipo === "INGRESO") {
       mensaje =
-        `🤔 *${descripcion} — ¿lo anoto?*\n\n` +
+        `${Messages.confirmTitle}\n\n` +
         `📝 *Descripción:* ${descripcion}\n` +
-        `💵 *Monto:* $${d.monto} ${d.moneda || "ARS"}\n` +
-        `📅 *Fecha:* ${d.fecha || "Hoy"}\n` +
+        `💵 *Monto:* ${formatAmount(d.monto, d.moneda)}\n` +
+        `📅 *Fecha:* ${formatFecha(d.fecha)}\n` +
         `🏷️ *Categoría:* ${d.categoria}\n` +
         `👤 *Persona:* ${d.persona || "—"}` +
         (notas ? `\n📋 *Notas:* ${notas}` : "") +
@@ -27,10 +45,10 @@ export class MessageBuilder {
     } else {
       const miParte = d.mi_parte !== undefined ? d.mi_parte : 100;
       mensaje =
-        `🤔 *${descripcion} — ¿lo anoto?*\n\n` +
+        `${Messages.confirmTitle}\n\n` +
         `📝 *Descripción:* ${descripcion}\n` +
-        `💵 *Monto:* $${d.monto} ${d.moneda || "ARS"}\n` +
-        `📅 *Fecha:* ${d.fecha || "Hoy"}\n` +
+        `💵 *Monto:* ${formatAmount(d.monto, d.moneda)}\n` +
+        `📅 *Fecha:* ${formatFecha(d.fecha)}\n` +
         `🏷️ *Categoría:* ${d.macro_categoria}\n` +
         `🔖 *Subcategoría:* ${d.subcategoria}\n` +
         `👤 *Persona:* ${d.persona || "—"}` +
@@ -41,7 +59,7 @@ export class MessageBuilder {
     }
 
     if (data.usa_contexto) {
-      mensaje += `\n\n💭 *Usando contexto del último registro confirmado*`;
+      mensaje += `\n\n${Messages.usingContext}`;
     }
 
     return mensaje;
@@ -52,30 +70,10 @@ export class MessageBuilder {
   private static readonly MAX_MESSAGE_LENGTH = 4000;
 
   static buildMultiConfirmationMessage(gastos: TransactionResult[]): string {
-    const hasGasto = gastos.some((g) => g.tipo === "GASTO");
-    const hasIngreso = gastos.some((g) => g.tipo === "INGRESO");
-    const totalGastos = gastos
-      .filter((g) => g.tipo === "GASTO")
-      .reduce((sum, g) => sum + (g.datos.monto || 0), 0);
-    const totalIngresos = gastos
-      .filter((g) => g.tipo === "INGRESO")
-      .reduce((sum, g) => sum + (g.datos.monto || 0), 0);
-    const moneda = gastos[0]?.datos.moneda || "ARS";
     const sep = "━━━━━━━━━━━━━━━";
+    const footer = `${sep}\n${totalsFooter(gastos)}`;
 
-    let footer = `${sep}\n`;
-    if (hasGasto && hasIngreso) {
-      footer +=
-        `Ingresos: $${totalIngresos} ${moneda}\n` +
-        `Gastos: $${totalGastos} ${moneda}\n` +
-        `Neto: $${totalIngresos - totalGastos} ${moneda}`;
-    } else if (hasIngreso) {
-      footer += `Total: $${totalIngresos} ${moneda}`;
-    } else {
-      footer += `Total: $${totalGastos} ${moneda}`;
-    }
-
-    let mensaje = `🤔 *¿Confirmás estos ${gastos.length} movimientos?*\n`;
+    let mensaje = `${Messages.confirmMultiTitle(gastos.length)}\n`;
     let shown = 0;
 
     for (const g of gastos) {
@@ -90,8 +88,8 @@ export class MessageBuilder {
 
       let item = `${sep}\n`;
       item += `${isIngreso ? "💰" : "🧾"} ${escapeMarkdown(d.descripcion)}\n`;
-      item += `   $${d.monto} ${d.moneda || "ARS"}`;
-      if (d.fecha) item += ` · ${d.fecha}`;
+      item += `   ${formatAmount(d.monto, d.moneda)}`;
+      if (d.fecha) item += ` · ${formatFecha(d.fecha)}`;
       if (d.persona) item += ` · ${escapeMarkdown(d.persona)}`;
       item += `\n`;
       item += isIngreso ? `   ${d.categoria}` : `   ${d.macro_categoria} → ${d.subcategoria}`;
@@ -112,50 +110,28 @@ export class MessageBuilder {
   }
 
   static buildSuccessMessage(saved: TransactionResult[], failedCount: number): string {
-    const failureNote =
-      failedCount > 0 ? `\n\n⚠️ ${failedCount} movimiento(s) no se pudieron guardar.` : "";
+    const failureNote = failedCount > 0 ? `\n\n${Messages.partialFailure(failedCount)}` : "";
 
     if (saved.length === 1) {
       const g = saved[0];
       const d = g.datos;
       const isIngreso = g.tipo === "INGRESO";
       let msg = `✅ *Anotado*\n\n`;
-      msg += `${escapeMarkdown(d.descripcion)} · $${d.monto} ${d.moneda || "ARS"}\n`;
+      msg += `${escapeMarkdown(d.descripcion)} · ${formatAmount(d.monto, d.moneda)}\n`;
       msg += isIngreso ? `${d.categoria}` : `${d.macro_categoria} → ${d.subcategoria}`;
-      if (d.fecha) msg += ` · ${d.fecha}`;
+      if (d.fecha) msg += ` · ${formatFecha(d.fecha)}`;
       if (d.persona) msg += ` · ${escapeMarkdown(d.persona)}`;
       return msg + failureNote;
     }
 
-    const hasGasto = saved.some((g) => g.tipo === "GASTO");
-    const hasIngreso = saved.some((g) => g.tipo === "INGRESO");
-    const totalGastos = saved
-      .filter((g) => g.tipo === "GASTO")
-      .reduce((sum, g) => sum + (g.datos.monto || 0), 0);
-    const totalIngresos = saved
-      .filter((g) => g.tipo === "INGRESO")
-      .reduce((sum, g) => sum + (g.datos.monto || 0), 0);
-    const moneda = saved[0]?.datos.moneda || "ARS";
-
-    let footer = "\n";
-    if (hasGasto && hasIngreso) {
-      footer +=
-        `Ingresos: $${totalIngresos} ${moneda}\n` +
-        `Gastos: $${totalGastos} ${moneda}\n` +
-        `Neto: $${totalIngresos - totalGastos} ${moneda}`;
-    } else if (hasIngreso) {
-      footer += `Total: $${totalIngresos} ${moneda}`;
-    } else {
-      footer += `Total: $${totalGastos} ${moneda}`;
-    }
-    footer += failureNote;
+    const footer = `\n${totalsFooter(saved)}${failureNote}`;
 
     let msg = `✅ *${saved.length} movimientos anotados*\n\n`;
     let shown = 0;
 
     for (const g of saved) {
-      let line = `${escapeMarkdown(g.datos.descripcion)} · $${g.datos.monto} ${g.datos.moneda || "ARS"}`;
-      if (g.datos.fecha) line += ` · ${g.datos.fecha}`;
+      let line = `${escapeMarkdown(g.datos.descripcion)} · ${formatAmount(g.datos.monto, g.datos.moneda)}`;
+      if (g.datos.fecha) line += ` · ${formatFecha(g.datos.fecha)}`;
       line += `\n`;
 
       if (msg.length + line.length + footer.length > this.MAX_MESSAGE_LENGTH) {
@@ -170,14 +146,19 @@ export class MessageBuilder {
     return msg + footer;
   }
 
-  static buildContextSummary(context: { tipo: string; datos: import("../types").TransactionData }): string {
+  static buildContextSummary(context: {
+    tipo: string;
+    datos: import("../types").TransactionData;
+  }): string {
     const d = context.datos;
     const categoriaLine =
-      context.tipo === "INGRESO" ? `🏷️ ${d.categoria}` : `🏷️ ${d.macro_categoria} → ${d.subcategoria}`;
+      context.tipo === "INGRESO"
+        ? `🏷️ ${d.categoria}`
+        : `🏷️ ${d.macro_categoria} → ${d.subcategoria}`;
     return (
-      `📝 ${d.descripcion} - $${d.monto}\n` +
+      `📝 ${d.descripcion} - $${formatMoney(d.monto)}\n` +
       `${categoriaLine}\n` +
-      `📅 ${d.fecha || "Hoy"}` +
+      `📅 ${formatFecha(d.fecha)}` +
       (d.persona ? `\n👤 ${d.persona}` : "")
     );
   }

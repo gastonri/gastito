@@ -1,12 +1,12 @@
-import { sessionManager } from "../../services/session-manager";
-import { contextManager } from "../../services/context-manager";
 import { CommandHandler } from "./types";
+import { ClarificationBuilder } from "../clarification-builder";
+import { Messages } from "../messages";
 
+/** Destructive: asks for confirmation. The actual cleanup runs in the dz_ callback. */
 export const handleReset: CommandHandler = async ({ chatId, telegramClient }) => {
-  await sessionManager.deleteSession(chatId);
-  contextManager.clearContext(chatId);
   await telegramClient.sendMessage(
     chatId,
-    "🔄 *Contexto limpiado*\n\nEmpezando conversación nueva."
+    Messages.resetAsk,
+    ClarificationBuilder.buildDangerKeyboard("reset")
   );
 };

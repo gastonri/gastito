@@ -17,13 +17,15 @@ export const handleAyuda: CommandHandler = async ({ chatId, telegramClient }) =>
       "`/contexto` — muestra el último registro confirmado\n" +
       "`/model` — muestra el modelo de IA actual\n" +
       "`/model gemini` o `/model anthropic` — cambia el modelo\n" +
-      "`/nuevo` o `/reset` — limpia el contexto y empieza de cero\n" +
+      "`/nuevo` o `/reset` — limpia el contexto y empieza de cero (pide confirmación)\n" +
       "`/exit` — termina la sesión actual\n\n" +
       "*Consejos*\n" +
       "• Podés mandar varios gastos y/o ingresos en un solo mensaje\n" +
       "• Las fotos de tickets se analizan automáticamente\n" +
       "• Los audios se transcriben antes de procesar\n" +
       "• Antes de tocar Confirmar podés mandar otro mensaje para corregir el registro pendiente (monto, categoría, etc.)\n" +
-      "• Cada registro se manda con botones ✅ Confirmar / 🗑️ Cancelar"
+      "• Cada registro se manda con botones ✅ Confirmar / 🗑️ Cancelar / ✏️ Editar\n" +
+      "• Si no se puede guardar, queda pendiente y podés tocar 🔁 Reintentar\n" +
+      "• `/nuevo`, `/reset` y `/exit` te piden confirmación antes de borrar"
   );
 };

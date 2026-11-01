@@ -1,4 +1,5 @@
 import type { ClarificationQuestion, AIClarificationResponse } from "../types";
+import { Buttons } from "./messages";
 
 export interface InlineKeyboardButton {
   text: string;
@@ -110,23 +111,54 @@ export class ClarificationBuilder {
     const rows = clarificationKeyboard?.inline_keyboard || [];
 
     // Add confirm/cancel row at the bottom
-    rows.push([
-      { text: "✅ Confirmar", callback_data: `conf_${operationId}` },
-      { text: "🗑️ Cancelar", callback_data: `cancel_${operationId}` },
-    ]);
+    rows.push(...this.confirmRows(operationId));
 
     return { inline_keyboard: rows };
   }
 
+  private static confirmRows(operationId: string): InlineKeyboardButton[][] {
+    return [
+      [
+        { text: Buttons.confirm, callback_data: `conf_${operationId}` },
+        { text: Buttons.cancel, callback_data: `cancel_${operationId}` },
+      ],
+      [{ text: Buttons.edit, callback_data: `edit_${operationId}` }],
+    ];
+  }
+
   /**
-   * Builds a simple confirm/cancel keyboard.
+   * Builds the confirm/cancel keyboard with an extra edit button.
    */
   static buildConfirmCancelKeyboard(operationId: string): InlineKeyboardMarkup {
+    return { inline_keyboard: this.confirmRows(operationId) };
+  }
+
+  /**
+   * Builds the keyboard shown when saving fails: retry (re-runs confirm) or cancel.
+   */
+  static buildRetryKeyboard(operationId: string): InlineKeyboardMarkup {
     return {
       inline_keyboard: [
         [
-          { text: "✅ Confirmar", callback_data: `conf_${operationId}` },
-          { text: "🗑️ Cancelar", callback_data: `cancel_${operationId}` },
+          { text: Buttons.retry, callback_data: `conf_${operationId}` },
+          { text: Buttons.cancel, callback_data: `cancel_${operationId}` },
+        ],
+      ],
+    };
+  }
+
+  /**
+   * Builds a yes/no keyboard to confirm destructive commands (/reset, /exit).
+   */
+  static buildDangerKeyboard(action: "reset" | "exit"): InlineKeyboardMarkup {
+    return {
+      inline_keyboard: [
+        [
+          {
+            text: action === "reset" ? Buttons.yesReset : Buttons.yesExit,
+            callback_data: `dz_${action}`,
+          },
+          { text: Buttons.no, callback_data: "dz_no" },
         ],
       ],
     };

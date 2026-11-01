@@ -10,6 +10,9 @@ import { ClarificationBuilder } from "./clarification-builder";
 import { MessageBuilder } from "./message-builder";
 import { Logger } from "../utils/logger";
 import { getErrorMessage } from "../utils/text";
+import { formatMoney } from "../utils/format";
+import { Messages } from "./messages";
+import type { InlineKeyboardMarkup } from "./clarification-builder";
 
 export class CallbackHandlers {
   private conversationHandler: ConversationHandler | null = null;
@@ -32,6 +35,10 @@ export class CallbackHandlers {
       await this.handleConfirm(callback.id, chatId, messageId, data);
     } else if (data.startsWith("cancel_")) {
       await this.handleCancel(callback.id, chatId, messageId, data);
+    } else if (data.startsWith("edit_")) {
+      await this.handleEdit(callback.id, chatId, data);
+    } else if (data.startsWith("dz_")) {
+      await this.handleDanger(callback.id, chatId, messageId, data);
     } else if (data.startsWith("cl_")) {
       await this.handleClarification(callback.id, chatId, messageId, data);
     }
@@ -47,12 +54,8 @@ export class CallbackHandlers {
     const storedData = await pendingOperations.getOperation(operationId);
 
     if (!storedData) {
-      await this.telegramClient.editMessage(
-        chatId,
-        messageId,
-        "⏱️ Esta operación expiró. Enviá de nuevo el mensaje."
-      );
-      await this.telegramClient.answerCallbackQuery(callbackId, "Operación expirada");
+      await this.telegramClient.editMessage(chatId, messageId, Messages.operationExpired);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.operationExpiredToast);
       return;
     }
 
@@ -77,7 +80,7 @@ export class CallbackHandlers {
     }
 
     if (saved.length === 0) {
-      await this.sendSaveError(chatId, messageId, callbackId, failed[0].error);
+      await this.sendSaveError(chatId, messageId, callbackId, operationId, failed[0].error);
       return;
     }
 
@@ -97,7 +100,9 @@ export class CallbackHandlers {
       );
     }
 
-    const successMessage = MessageBuilder.buildSuccessMessage(saved, failed.length);
+    let successMessage = MessageBuilder.buildSuccessMessage(saved, failed.length);
+    const budgetNote = await this.buildBudgetNote(saved);
+    if (budgetNote) successMessage += `\n\n${budgetNote}`;
     await this.sendSaveSuccess(chatId, messageId, callbackId, successMessage);
   }
 
@@ -113,12 +118,89 @@ export class CallbackHandlers {
     // Delete session (explicit termination)
     await sessionManager.deleteSession(chatId);
 
-    await this.telegramClient.editMessage(
-      chatId,
-      messageId,
-      "🗑️ *Operación cancelada*\n\nNo se guardó nada."
-    );
-    await this.telegramClient.answerCallbackQuery(callbackId, "Cancelado");
+    await this.telegramClient.editMessage(chatId, messageId, Messages.cancelled);
+    await this.telegramClient.answerCallbackQuery(callbackId, Messages.cancelledToast);
+  }
+
+  private async handleEdit(callbackId: string, chatId: number, data: string): Promise<void> {
+    const operationId = data.replace("edit_", "");
+    const exists = await pendingOperations.getOperation(operationId);
+
+    if (!exists) {
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.operationExpiredToast);
+      await this.telegramClient.sendMessage(chatId, Messages.operationExpired);
+      return;
+    }
+
+    await this.telegramClient.answerCallbackQuery(callbackId, Messages.editToast);
+    await this.telegramClient.sendMessage(chatId, Messages.editHint);
+  }
+
+  private async handleDanger(
+    callbackId: string,
+    chatId: number,
+    messageId: number,
+    data: string
+  ): Promise<void> {
+    if (data === "dz_reset" || data === "dz_exit") {
+      await sessionManager.deleteSession(chatId);
+      contextManager.clearContext(chatId);
+      await this.sendOrEditMessage(
+        chatId,
+        messageId,
+        data === "dz_reset" ? Messages.resetDone : Messages.exitDone
+      );
+      await this.telegramClient.answerCallbackQuery(callbackId, "Listo");
+      return;
+    }
+
+    await this.sendOrEditMessage(chatId, messageId, Messages.dangerAborted);
+    await this.telegramClient.answerCallbackQuery(callbackId, Messages.dangerAbortedToast);
+  }
+
+  /**
+   * Best-effort budget progress for the categories just saved. Never throws:
+   * a failure here must not affect the success message.
+   */
+  private async buildBudgetNote(
+    saved: { tipo: string; datos: { macro_categoria?: string } }[]
+  ): Promise<string> {
+    try {
+      const categorias = [
+        ...new Set(
+          saved
+            .filter((g) => g.tipo === "GASTO" && g.datos.macro_categoria)
+            .map((g) => g.datos.macro_categoria as string)
+        ),
+      ];
+      if (categorias.length === 0) return "";
+
+      const presupuestos = await this.sheetsClient.getPresupuestos();
+      const relevantes = presupuestos.filter((p) => categorias.includes(p.macro_categoria));
+      if (relevantes.length === 0) return "";
+
+      const now = new Date();
+      const gastos = await this.sheetsClient.getGastosDelMes(now.getFullYear(), now.getMonth() + 1);
+
+      return relevantes
+        .filter((p) => p.monto > 0)
+        .map((p) => {
+          const gastado = gastos
+            .filter((g) => g.macro_categoria === p.macro_categoria)
+            .reduce((sum, g) => sum + g.monto, 0);
+          const pct = Math.round((gastado / p.monto) * 100);
+          return Messages.budgetLine(
+            p.macro_categoria,
+            pct,
+            formatMoney(gastado),
+            formatMoney(p.monto)
+          );
+        })
+        .join("\n");
+    } catch (error) {
+      Logger.warn(`Could not build budget note: ${getErrorMessage(error)}`);
+      return "";
+    }
   }
 
   private async handleClarification(
@@ -129,28 +211,21 @@ export class CallbackHandlers {
   ): Promise<void> {
     if (!this.conversationHandler) {
       Logger.warn("ConversationHandler not set for clarification callback");
-      await this.telegramClient.answerCallbackQuery(callbackId, "Error interno");
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.internalErrorToast);
       return;
     }
 
     const parsed = ClarificationBuilder.parseCallbackData(data);
     if (!parsed) {
       Logger.warn(`Invalid clarification callback data: ${data}`);
-      await this.telegramClient.answerCallbackQuery(callbackId, "Error");
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.internalErrorToast);
       return;
     }
 
     const session = await sessionManager.getSession(chatId);
     if (!session || !session.pendingQuestions) {
-      await this.telegramClient.answerCallbackQuery(
-        callbackId,
-        "Sesión expirada"
-      );
-      await this.telegramClient.editMessage(
-        chatId,
-        messageId,
-        "⏱️ Tu sesión expiró. Por favor, empezá de nuevo."
-      );
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.sessionExpiredToast);
+      await this.telegramClient.editMessage(chatId, messageId, Messages.sessionExpired);
       return;
     }
 
@@ -162,7 +237,7 @@ export class CallbackHandlers {
 
     if (!question) {
       Logger.warn(`Question not found for prefix: ${parsed.questionIdPrefix}`);
-      await this.telegramClient.answerCallbackQuery(callbackId, "Error");
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.internalErrorToast);
       return;
     }
 
@@ -173,43 +248,40 @@ export class CallbackHandlers {
       parsed.value
     );
 
-    await this.telegramClient.answerCallbackQuery(
-      callbackId,
-      `✓ ${parsed.value}`
-    );
+    await this.telegramClient.answerCallbackQuery(callbackId, `✓ ${parsed.value}`);
 
     // Handle the result
     if (result.type === "transaction" && result.response?.responseType === "transaction") {
       // We have a complete transaction now, show confirmation
-      const confirmMessage = MessageBuilder.buildConfirmationMessage(
-        result.response.transaction
-      );
+      const confirmMessage = MessageBuilder.buildConfirmationMessage(result.response.transaction);
       const keyboard = ClarificationBuilder.buildConfirmCancelKeyboard(
         session.lastOperationId || session.sessionId
       );
 
       await this.telegramClient.editMessage(chatId, messageId, confirmMessage, keyboard);
-    } else if (result.type === "clarification" && result.response?.responseType === "clarification") {
+    } else if (
+      result.type === "clarification" &&
+      result.response?.responseType === "clarification"
+    ) {
       // Still need more clarification
-      const { text, keyboard } = ClarificationBuilder.buildClarificationMessage(
-        result.response
-      );
+      const { text, keyboard } = ClarificationBuilder.buildClarificationMessage(result.response);
       await this.telegramClient.editMessage(chatId, messageId, text, keyboard || undefined);
     } else if (result.type === "error") {
-      await this.telegramClient.editMessage(
-        chatId,
-        messageId,
-        `❌ ${result.message || "Ocurrió un error"}`
-      );
+      await this.telegramClient.editMessage(chatId, messageId, Messages.clarificationError);
     }
   }
 
-  private async sendOrEditMessage(chatId: number, messageId: number, text: string): Promise<void> {
+  private async sendOrEditMessage(
+    chatId: number,
+    messageId: number,
+    text: string,
+    keyboard?: InlineKeyboardMarkup
+  ): Promise<void> {
     try {
-      await this.telegramClient.editMessage(chatId, messageId, text);
+      await this.telegramClient.editMessage(chatId, messageId, text, keyboard);
     } catch {
       Logger.warn(`Could not edit message for chat ${chatId}, sending a new message instead`);
-      await this.telegramClient.sendMessage(chatId, text);
+      await this.telegramClient.sendMessage(chatId, text, keyboard);
     }
   }
 
@@ -222,9 +294,11 @@ export class CallbackHandlers {
     await this.sendOrEditMessage(chatId, messageId, successMessage);
 
     try {
-      await this.telegramClient.answerCallbackQuery(callbackId, "✓ Guardado");
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.saved);
     } catch (error) {
-      Logger.warn(`Could not answer callback query after successful save: ${getErrorMessage(error)}`);
+      Logger.warn(
+        `Could not answer callback query after successful save: ${getErrorMessage(error)}`
+      );
     }
   }
 
@@ -232,19 +306,25 @@ export class CallbackHandlers {
     chatId: number,
     messageId: number,
     callbackId: string,
+    operationId: string,
     error: unknown
   ): Promise<void> {
-    const errorMessage = getErrorMessage(error);
+    // Technical details stay in the logs; the pending operation is kept so the user can retry.
+    Logger.error(`Save failed for operation ${operationId}: ${getErrorMessage(error)}`);
+
     await this.sendOrEditMessage(
       chatId,
       messageId,
-      "❌ *Error al guardar*\n\n" + errorMessage + "\n\nRevisá los logs para más detalles."
+      Messages.saveFailed,
+      ClarificationBuilder.buildRetryKeyboard(operationId)
     );
 
     try {
-      await this.telegramClient.answerCallbackQuery(callbackId, "Error: " + errorMessage);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.saveFailedToast);
     } catch (callbackError) {
-      Logger.warn(`Could not answer callback query after save error: ${getErrorMessage(callbackError)}`);
+      Logger.warn(
+        `Could not answer callback query after save error: ${getErrorMessage(callbackError)}`
+      );
     }
   }
 }
