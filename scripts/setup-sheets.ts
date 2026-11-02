@@ -97,10 +97,12 @@ const CATEGORIES: Record<string, string[]> = {
 //  G  moneda         ARS | USD
 //  H  cuotas         1 si no se especifica
 //  I  n_cuota        1 si no se especifica
-//  J  imp_mensual    fórmula: =F/H (calculado al escribir cada fila)
+//  J  imp_mensual    fórmula de PLANTILLA_GASTOS!J2 (la copia la app al escribir cada fila)
 //  K  mi_parte_%     0-100, default 100
 //  L  link           opcional
 //  M  notas          opcional
+//  N-P año, mes, dia fórmulas de PLANTILLA_GASTOS!N2:P2
+//  Q  tipo_cambio    ARS por USD usado (vacío en pesos)
 
 const GASTOS_HEADERS = [
   "fecha",
@@ -119,6 +121,7 @@ const GASTOS_HEADERS = [
   "año",
   "mes",
   "dia",
+  "tipo_cambio",
 ];
 
 // ─── Columnas de INGRESOS ─────────────────────────────────────────────────────

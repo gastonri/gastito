@@ -53,7 +53,7 @@ WEBHOOK_URL=https://gastito-xxxxx.northflank.app
 ```
 PORT=3000
 NODE_ENV=production
-GEMINI_MODEL_NAME=gemini-2.5-flash
+GEMINI_MODEL_NAME=gemini-3.6-flash
 DEFAULT_AI_PROVIDER=gemini
 ```
 

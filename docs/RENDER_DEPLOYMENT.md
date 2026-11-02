@@ -56,7 +56,7 @@ In Render dashboard → Your Service → **Environment**, add the following vari
 
 - **`PORT`** - Default: 3000 (Render sets this automatically, but good to have)
 - **`NODE_ENV`** - Default: `production`
-- **`GEMINI_MODEL_NAME`** - Default: `gemini-2.5-flash`
+- **`GEMINI_MODEL_NAME`** - Default: `gemini-3.6-flash`
 - **`DEFAULT_AI_PROVIDER`** - Default: `gemini` (or `anthropic`)
 - **`ANTHROPIC_API_KEY`** - Required if using Anthropic Claude
 - **`ANTHROPIC_MODEL_NAME`** - Default: `claude-haiku-4-5-20251001`

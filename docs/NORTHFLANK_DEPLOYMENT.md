@@ -64,7 +64,7 @@ Click **"> Runtime variables"** and add:
 
 - **`PORT`** - Default: `3000` (Northflank sets this automatically)
 - **`NODE_ENV`** - Set to `production`
-- **`GEMINI_MODEL_NAME`** - Default: `gemini-2.5-flash`
+- **`GEMINI_MODEL_NAME`** - Default: `gemini-3.6-flash`
 - **`DEFAULT_AI_PROVIDER`** - Default: `gemini` (or `anthropic`)
 - **`ANTHROPIC_API_KEY`** - Required if using Anthropic Claude
 - **`ANTHROPIC_MODEL_NAME`** - Default: `claude-haiku-4-5-20251001`

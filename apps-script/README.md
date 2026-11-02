@@ -20,6 +20,6 @@ que quede versionado: si se cambia en el editor, actualizar también este direct
    - `fetchDolarTarjeta` ► Basado en tiempo ► diario (por ejemplo entre 8 y 9 h).
    - `fetchDolarBlue` ► Basado en tiempo ► diario (crearlo si no existe).
    - Ningún `onSheetChange`.
-6. Recién después desplegar la app (`bun run deploy`).
+6. Recién después desplegar la app (en Northflank el deploy se dispara al pushear a `main`).
 
 Más contexto en `docs/SHEETS.md`.

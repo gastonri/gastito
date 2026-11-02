@@ -14,15 +14,36 @@ Bot de Telegram para registrar gastos personales usando IA (Google Gemini). Proc
 - ✅ Botones de confirmar/cancelar antes de guardar
 - 👤 Soporte para múltiples usuarios (ej: pareja) con whitelist por chat ID
 - 💸 Campo `mi_parte` (0-100%) para gastos compartidos
+- 💱 Gastos en USD convertidos con dólar tarjeta (automático) o blue, con botón para cambiarlo antes de confirmar
+- 🏷️ Botón para cambiar la categoría antes de confirmar
+- 📊 Porcentaje del presupuesto del mes del gasto después de cada registro
+- ↩️ `/deshacer` para borrar lo último confirmado, y aviso de posibles duplicados
+- 📈 `/resumen`, `/grafico`, `/comparar` y `/presupuesto` (ver `/ayuda` en el bot)
 
 ## Estructura del Spreadsheet
 
-El script `bun run setup` crea automáticamente las hojas necesarias.
+El script `bun run setup` crea las hojas base (`GASTOS`, `INGRESOS`, `CONFIG`). Las hojas auxiliares de abajo se crean a mano.
 
 ### Hoja GASTOS
 
-| A: fecha | B: persona | C: descripcion | D: macro_categoria | E: subcategoria | F: monto | G: moneda | H: cuotas | I: n_cuota | J: imp_mensual | K: mi_parte_% | L: link | M: notas |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A: fecha | B: persona | C: descripcion | D: macro_categoria | E: subcategoria | F: monto | G: moneda | H: cuotas | I: n_cuota | J: imp_mensual | K: mi_parte_% | L: link | M: notas | N: año | O: mes | P: dia | Q: tipo_cambio |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+
+La app escribe solo los datos de entrada. `imp_mensual` (J) y año, mes, día (N:P) son **fórmulas** que se copian
+de la fila 2 de la hoja `PLANTILLA_GASTOS`. `tipo_cambio` (Q) es la cotización en pesos usada para un gasto en USD.
+Cada gasto se escribe en una sola operación atómica. Detalle en [`docs/SHEETS.md`](docs/SHEETS.md).
+
+### Hojas auxiliares
+
+| Hoja | Para qué |
+|---|---|
+| `PLANTILLA_GASTOS` | Fila 2 con las fórmulas que se copian a cada gasto nuevo. No mover ni borrar. |
+| `Dolar Tarjeta`, `Dolar Blue` | Cotización diaria (fecha, precio) que llena un Google Apps Script. |
+| `PRESUPUESTOS` | Presupuesto mensual por categoría. |
+| `CUADERNO_CONTABLE` | Ingresos, gastos y neto por mes. |
+
+Un Google Apps Script mantiene `GASTOS` ordenada por fecha y trae las cotizaciones del dólar.
+El código está en [`apps-script/`](apps-script/README.md) y hay que copiarlo a mano en la planilla.
 
 ### Hoja INGRESOS
 
@@ -85,7 +106,7 @@ Variables requeridas:
 | `TELEGRAM_TOKEN` | Token del bot de Telegram |
 | `TELEGRAM_CHAT_ID` | Tu chat ID (whitelist principal) |
 | `WEBHOOK_URL` | URL pública del servidor |
-| `GEMINI_API_KEY` | Google Gemini API key |
+| `GEMINI_API_KEY` | Google Gemini API key (o `GEMINI_API_KEYS`, ver abajo) |
 | `GOOGLE_SHEETS_SPREADSHEET_ID` | ID de la spreadsheet |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path al JSON de service account |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | O bien, el JSON como string (para producción) |
@@ -98,6 +119,10 @@ Variables opcionales:
 | `TELEGRAM_PARTNER_CHAT_ID` | Chat ID de la pareja (agrega al whitelist) |
 | `TELEGRAM_USER_NAMES` | Mapeo `chatId:Nombre,...` para el campo persona |
 | `DEFAULT_AI_PROVIDER` | `gemini` (default) o `anthropic` |
+| `GEMINI_API_KEYS` | Varias keys separadas por coma. Tiene prioridad sobre `GEMINI_API_KEY` y rota si una llega al límite de cuota |
+| `GEMINI_MODEL_NAME` | Modelo de Gemini (default `gemini-3.6-flash`) |
+| `GEMINI_THINKING_LEVEL` | Nivel de razonamiento (default `minimal`; vacío usa el del modelo). `minimal` no lo soportan todos los modelos |
+| `GEMINI_RATE_LIMIT_COOLDOWN_MS` | Pausa de una key al llegar al límite (default 60000) |
 
 4. **Iniciar Redis para desarrollo local:**
 ```bash
@@ -116,12 +141,20 @@ bun run dev
 
 ## Deployment en Northflank
 
-El bot está desplegado en [Northflank](https://northflank.com). Para redeploy basta con pushear a `main`.
+El bot está desplegado en [Northflank](https://northflank.com). **Pushear a `main` dispara el deploy.**
 
 Las variables de entorno se configuran desde el panel de Northflank. Asegurarse de tener:
 - Todas las variables de la tabla de arriba
 - `WEBHOOK_URL` apuntando al dominio de Northflank
 - `GOOGLE_SERVICE_ACCOUNT_JSON` con el JSON del service account (en vez de `GOOGLE_APPLICATION_CREDENTIALS`)
+
+Si no se define `GEMINI_MODEL_NAME`, se usa el modelo por defecto del código. Google da de baja modelos
+viejos para cuentas nuevas (pasó con `gemini-2.5-flash`), así que conviene revisar los logs si el bot deja de analizar.
+
+## Logs
+
+Los eventos estructurados (`EVENT ...`) muestran tiempos por etapa, llamadas a Gemini y la causa de cada error.
+Ver [`docs/LOGS.md`](docs/LOGS.md) para los eventos y búsquedas útiles.
 
 ## Estructura del proyecto
 
@@ -134,13 +167,18 @@ gastito/
 │   ├── sheets/          # Cliente Google Sheets
 │   ├── services/        # Lógica de negocio
 │   ├── types/           # TypeScript types
-│   ├── utils/           # Logger
+│   ├── utils/           # Logger, formato, números, tiempos
 │   └── server.ts        # Entry point Express
 ├── scripts/
-│   └── setup-sheets.ts  # Crea/recrea hojas en el Spreadsheet
+│   ├── setup-sheets.ts  # Crea/recrea hojas en el Spreadsheet
+│   ├── eval-prompts.ts  # Evals de los prompts contra Gemini
+│   └── eval-report.ts   # Reporte HTML de los evals
+├── evals/               # Casos de prueba de prompts y resultados (ignorados por git)
+├── apps-script/         # Google Apps Script de la planilla (orden y dólar)
+├── docs/                # SHEETS.md, LOGS.md y guías de deploy
 ├── legacy/              # Versiones anteriores en Google Apps Script
 ├── Dockerfile
-└── fly.toml
+└── fly.toml             # Config histórica de Fly.io; hoy se despliega en Northflank
 ```
 
 ## Comandos
@@ -152,6 +190,8 @@ gastito/
 | `bun run setup` | Crea/recrea hojas GASTOS y CONFIG en el Spreadsheet |
 | `bun run type-check` | Chequeo de tipos TypeScript |
 | `bun run lint` | Lint |
+| `bun test` | Tests |
+| `bun run eval:prompts` | Evals de prompts (necesita una Gemini key válida; ver `scripts/eval-prompts.ts`) |
 
 ## License
 

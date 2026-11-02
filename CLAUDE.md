@@ -20,7 +20,7 @@ bun run type-check             # TypeScript type checking
 bun run lint                   # ESLint
 bun run lint:fix               # ESLint with auto-fix
 bun run format                 # Prettier format
-bun run deploy                 # Deploy to Fly.io
+bun run deploy                 # Legacy Fly.io deploy (production deploys by pushing to main)
 ```
 
 No build step required - Bun runs TypeScript directly.
@@ -55,13 +55,27 @@ Telegram → Express /webhook → Message Handler → AI Client → Sheets Clien
 - **Singleton Pattern**: `contextManager` and `pendingOperations` for in-memory state
 - **Confirmation Workflow**: Transactions stored in pending state until user confirms via Telegram buttons
 
+### Gemini notes
+
+- `GEMINI_API_KEYS` (comma separated) takes priority over `GEMINI_API_KEY`; keys rotate only on HTTP 429.
+- Default model is in `src/config/index.ts` (`gemini-3.6-flash`) and `GEMINI_THINKING_LEVEL` defaults to `minimal`; if the model rejects it the request is retried without it. A 404 "no longer available" means the model was retired for the key.
+- Requests use the `v1beta` endpoint (needed for `thinkingConfig`).
+- The webhook answers 200 immediately and processes in the background; repeated `update_id`s are ignored.
+- Structured logs (`EVENT name key=value`) are documented in `docs/LOGS.md`.
+
 ### AI Provider System
 
 Both providers implement the `AIClient` interface. Users can switch providers via `/model gemini|anthropic` command. Default provider set via `DEFAULT_AI_PROVIDER` env var.
 
 ### Google Sheets Structure
 
-Required sheets: `CONFIG` (accounts, categories), `MIS_DATOS` (personal data), `GASTOS` (expenses), `INGRESOS` (income)
+Sheets used: `CONFIG` (categories), `GASTOS` (expenses), `INGRESOS` (income), `PRESUPUESTOS`, `CUADERNO_CONTABLE`,
+`Dolar Tarjeta` / `Dolar Blue` (daily rates) and `PLANTILLA_GASTOS` (row 2 holds the formulas copied to each new expense).
+
+- One owner per column: the app writes inputs only; `imp_mensual` (J) and año/mes/dia (N:P) are sheet formulas.
+- `writeGasto` must stay a **single atomic `batchUpdate`** (a sheet-side Apps Script sorts on every change and used to move rows between two writes). `/deshacer` finds rows by content, never by row number.
+- To change a calculation, edit the formulas in `PLANTILLA_GASTOS` row 2 instead of the code. See `docs/SHEETS.md`.
+- The Google Apps Script lives in `apps-script/` and is copied by hand into the spreadsheet.
 
 ## Key Environment Variables
 
@@ -76,6 +90,6 @@ DEFAULT_AI_PROVIDER (gemini|anthropic)
 
 ## Deployment
 
-- **Fly.io**: Primary platform (`fly.toml`)
+- **Northflank**: Production. Pushing to `main` deploys. (`fly.toml` is a historical Fly.io config.)
 - **Render**: Free tier alternative (`render.yaml`) - uses UptimeRobot to keep awake
 - Health endpoints: `/health` (simple), `/healthz` (detailed)

@@ -86,7 +86,7 @@ Successfully migrated the Budgetify Telegram bot from Google Apps Script to Bun 
 - `TELEGRAM_TOKEN` - Telegram bot token
 - `TELEGRAM_CHAT_ID` - Authorized chat ID
 - `GEMINI_API_KEY` - Google Gemini API key
-- `GEMINI_MODEL_NAME` - Gemini model (default: gemini-2.5-flash)
+- `GEMINI_MODEL_NAME` - Gemini model (default: gemini-3.6-flash)
 - `GOOGLE_SHEETS_SPREADSHEET_ID` - Spreadsheet ID
 - `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON
   OR
