@@ -121,7 +121,7 @@ export class GeminiClient implements AIClient {
         }
         if (isTimeoutError(error)) {
           timedOut.add(keyIndex);
-          lastTimeout = error;
+          lastTimeout = error as Error;
           Logger.event("gemini_timeout", {
             key: `${keyIndex + 1}/${this.apiKeys.length}`,
             next_key: this.getAvailableKeyIndex(timedOut) !== null,
