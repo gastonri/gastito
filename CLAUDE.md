@@ -57,7 +57,7 @@ Telegram → Express /webhook → Message Handler → AI Client → Sheets Clien
 
 ### Gemini notes
 
-- `GEMINI_API_KEYS` (comma separated) takes priority over `GEMINI_API_KEY`; keys rotate only on HTTP 429.
+- `GEMINI_API_KEYS` (comma separated) takes priority over `GEMINI_API_KEY`; keys rotate on HTTP 429 and when a call exceeds `GEMINI_TIMEOUT_MS` (12 s text, 45 s photo/audio).
 - Default model is in `src/config/index.ts` (`gemini-3.6-flash`) and `GEMINI_THINKING_LEVEL` defaults to `minimal`; if the model rejects it the request is retried without it. A 404 "no longer available" means the model was retired for the key.
 - Requests use the `v1beta` endpoint (needed for `thinkingConfig`).
 - The webhook answers 200 immediately and processes in the background; repeated `update_id`s are ignored.

@@ -24,6 +24,10 @@ describe("toUserMessage", () => {
     expect(toUserMessage(err)).toBe(Messages.aiModelUnavailable);
   });
 
+  it("explains a timeout", () => {
+    expect(toUserMessage(gemini("timeout of 12000ms exceeded"))).toBe(Messages.aiTimeout);
+  });
+
   it("keeps quota errors separate", () => {
     expect(toUserMessage(gemini('{"code":429,"status":"RESOURCE_EXHAUSTED"}'))).toBe(
       Messages.quotaExceeded

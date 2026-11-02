@@ -25,6 +25,8 @@ export const Messages = {
     "🎤 No pude entender el audio.\n\nGrabalo de nuevo hablando claro y en español, o escribime el movimiento.",
   aiHighDemand:
     "⏳ La IA de Google está con mucha demanda en este momento.\n\nEs algo temporal y no depende del bot. Esperá un minuto y mandame el movimiento de nuevo (no se guardó nada).",
+  aiTimeout:
+    "⏳ La IA tardó demasiado en responder.\n\nNo se guardó nada. Mandame el movimiento de nuevo en un momento.",
   aiModelUnavailable:
     "🛠️ El modelo de IA no está disponible o cambió de configuración.\n\nNo es un problema de tu mensaje: hay que revisar el bot. Avisale a Gastón y mientras tanto cargá el movimiento a mano en la hoja.",
   aiUnavailable:

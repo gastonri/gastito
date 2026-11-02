@@ -15,6 +15,7 @@ export type ErrorKind =
   | "quota"
   | "no_transaction"
   | "network"
+  | "ai_timeout"
   | "ai_high_demand"
   | "ai_model_unavailable"
   | "ai_other"
@@ -28,6 +29,7 @@ export function classifyError(error: unknown): ErrorKind {
 
   if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) return "quota";
   if (/No result from message handler/i.test(msg)) return "no_transaction";
+  if (/timeout of \d+ms exceeded/i.test(msg)) return "ai_timeout";
   if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|timeout|network|socket hang up/i.test(msg)) {
     return "network";
   }
@@ -58,6 +60,8 @@ export function toUserMessage(error: unknown): string {
       return Messages.noTransactionFound;
     case "network":
       return Messages.networkError;
+    case "ai_timeout":
+      return Messages.aiTimeout;
     case "ai_high_demand":
       return Messages.aiHighDemand;
     case "ai_model_unavailable":

@@ -122,6 +122,8 @@ Variables opcionales:
 | `GEMINI_API_KEYS` | Varias keys separadas por coma. Tiene prioridad sobre `GEMINI_API_KEY` y rota si una llega al límite de cuota |
 | `GEMINI_MODEL_NAME` | Modelo de Gemini (default `gemini-3.6-flash`) |
 | `GEMINI_THINKING_LEVEL` | Nivel de razonamiento (default `minimal`; vacío usa el del modelo). `minimal` no lo soportan todos los modelos |
+| `GEMINI_TIMEOUT_MS` | Espera máxima por una llamada de texto antes de reintentar con la otra key (default 12000) |
+| `GEMINI_HEAVY_TIMEOUT_MS` | Lo mismo para fotos y audios (default 45000) |
 | `GEMINI_RATE_LIMIT_COOLDOWN_MS` | Pausa de una key al llegar al límite (default 60000) |
 
 4. **Iniciar Redis para desarrollo local:**

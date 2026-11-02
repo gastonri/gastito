@@ -5,6 +5,11 @@ import { GeminiAPIError } from "../utils/errors";
 import { ImageData, AudioData, GeminiResponse, GeminiErrorDetail } from "../types";
 import { AIClient } from "./client";
 
+/** The request exceeded the configured timeout (axios: "timeout of 12000ms exceeded"). */
+export function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && /timeout of \d+ms exceeded/i.test(error.message);
+}
+
 export class GeminiClient implements AIClient {
   private readonly apiKeys: string[];
   private readonly keyCooldowns: Map<number, number> = new Map();
@@ -34,7 +39,9 @@ export class GeminiClient implements AIClient {
       key: `${meta.keyIndex + 1}/${this.apiKeys.length}`,
       thinking: level || "default",
     };
-    const send = (body: object) => axios.post<GeminiResponse>(url, body);
+    const timeout =
+      meta.op === "text" ? config.ai.gemini.timeoutMs : config.ai.gemini.heavyTimeoutMs;
+    const send = (body: object) => axios.post<GeminiResponse>(url, body, { timeout });
 
     try {
       let response: AxiosResponse<GeminiResponse>;
@@ -75,10 +82,10 @@ export class GeminiClient implements AIClient {
     }
   }
 
-  private getAvailableKeyIndex(): number | null {
+  private getAvailableKeyIndex(exclude: Set<number> = new Set()): number | null {
     const now = Date.now();
     for (let i = 0; i < this.apiKeys.length; i++) {
-      if (now >= (this.keyCooldowns.get(i) ?? 0)) {
+      if (!exclude.has(i) && now >= (this.keyCooldowns.get(i) ?? 0)) {
         return i;
       }
     }
@@ -88,10 +95,15 @@ export class GeminiClient implements AIClient {
   private async executeWithFallback<T>(
     fn: (apiKey: string, keyIndex: number) => Promise<T>
   ): Promise<T> {
+    // Keys that already timed out for this request: do not wait on them twice.
+    const timedOut = new Set<number>();
+    let lastTimeout: Error | null = null;
+
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const keyIndex = this.getAvailableKeyIndex();
+      const keyIndex = this.getAvailableKeyIndex(timedOut);
       if (keyIndex === null) {
+        if (lastTimeout) throw lastTimeout;
         throw new GeminiAPIError("All Gemini API keys are rate limited", 429);
       }
 
@@ -104,6 +116,15 @@ export class GeminiClient implements AIClient {
           Logger.event("gemini_key_cooldown", {
             key: `${keyIndex + 1}/${this.apiKeys.length}`,
             cooldown_s: cooldownMs / 1000,
+          });
+          continue;
+        }
+        if (isTimeoutError(error)) {
+          timedOut.add(keyIndex);
+          lastTimeout = error;
+          Logger.event("gemini_timeout", {
+            key: `${keyIndex + 1}/${this.apiKeys.length}`,
+            next_key: this.getAvailableKeyIndex(timedOut) !== null,
           });
           continue;
         }

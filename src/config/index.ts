@@ -34,6 +34,9 @@ export const config = {
       modelName: process.env.GEMINI_MODEL_NAME || "gemini-3.6-flash",
       // "minimal" keeps extraction fast; set GEMINI_THINKING_LEVEL to "" to use the model default
       thinkingLevel: process.env.GEMINI_THINKING_LEVEL ?? "minimal",
+      // Max wait for a text call before retrying with the next key; photos and audio get more time
+      timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS || "12000", 10),
+      heavyTimeoutMs: parseInt(process.env.GEMINI_HEAVY_TIMEOUT_MS || "45000", 10),
       rateLimitCooldownMs: parseInt(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || "60000", 10),
     },
     anthropic: {
