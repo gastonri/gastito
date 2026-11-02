@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosResponse } from "axios";
 import { config } from "../config";
 import { Logger } from "../utils/logger";
 import { GeminiAPIError } from "../utils/errors";
@@ -14,7 +14,28 @@ export class GeminiClient implements AIClient {
   constructor() {
     this.apiKeys = config.ai.gemini.apiKeys;
     this.modelName = config.ai.gemini.modelName;
-    this.baseUrl = "https://generativelanguage.googleapis.com/v1";
+    this.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+  }
+
+  /**
+   * Posts a generateContent request limiting the model's reasoning (the default level is slow
+   * for this bot's extraction task). If the model rejects the setting, retries without it.
+   */
+  private async post(url: string, payload: object): Promise<AxiosResponse<GeminiResponse>> {
+    const level = config.ai.gemini.thinkingLevel;
+    if (!level) return axios.post<GeminiResponse>(url, payload);
+    try {
+      return await axios.post<GeminiResponse>(url, {
+        ...payload,
+        generationConfig: { thinkingConfig: { thinkingLevel: level } },
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 400) {
+        Logger.log(`Gemini rejected thinkingLevel "${level}", retrying without it`);
+        return axios.post<GeminiResponse>(url, payload);
+      }
+      throw error;
+    }
   }
 
   private getAvailableKeyIndex(): number | null {
@@ -59,7 +80,7 @@ export class GeminiClient implements AIClient {
           contents: [{ parts: [{ text: prompt }] }],
         };
 
-        const response = await axios.post<GeminiResponse>(url, payload);
+        const response = await this.post(url, payload);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 
@@ -130,7 +151,7 @@ export class GeminiClient implements AIClient {
         };
 
         Logger.log(`Calling Gemini Vision API with model: ${this.modelName}`);
-        const response = await axios.post<GeminiResponse>(url, payload);
+        const response = await this.post(url, payload);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 
@@ -223,7 +244,7 @@ IMPORTANTE:
         };
 
         Logger.log(`Calling Gemini Audio API with model: ${this.modelName}`);
-        const response = await axios.post<GeminiResponse>(url, payload);
+        const response = await this.post(url, payload);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 

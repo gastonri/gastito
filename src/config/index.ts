@@ -4,7 +4,9 @@ export const config = {
   telegram: {
     token: process.env.TELEGRAM_TOKEN || "",
     chatId: parseInt(process.env.TELEGRAM_CHAT_ID || "0", 10),
-    partnerChatId: process.env.TELEGRAM_PARTNER_CHAT_ID ? parseInt(process.env.TELEGRAM_PARTNER_CHAT_ID, 10) : null,
+    partnerChatId: process.env.TELEGRAM_PARTNER_CHAT_ID
+      ? parseInt(process.env.TELEGRAM_PARTNER_CHAT_ID, 10)
+      : null,
     webhookUrl: process.env.WEBHOOK_URL || "",
     userNames: Object.fromEntries(
       (process.env.TELEGRAM_USER_NAMES || "")
@@ -25,9 +27,13 @@ export const config = {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY || "",
       apiKeys: process.env.GEMINI_API_KEYS
-        ? process.env.GEMINI_API_KEYS.split(",").map((k) => k.trim()).filter(Boolean)
+        ? process.env.GEMINI_API_KEYS.split(",")
+            .map((k) => k.trim())
+            .filter(Boolean)
         : [process.env.GEMINI_API_KEY || ""].filter(Boolean),
       modelName: process.env.GEMINI_MODEL_NAME || "gemini-3.8-flash",
+      // "low" keeps extraction fast; set GEMINI_THINKING_LEVEL to "" to use the model default
+      thinkingLevel: process.env.GEMINI_THINKING_LEVEL ?? "low",
       rateLimitCooldownMs: parseInt(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || "60000", 10),
     },
     anthropic: {
