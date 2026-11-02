@@ -23,6 +23,10 @@ export const Messages = {
     "🤷 No pude identificar ningún movimiento.\n\nProbá con algo como: `almuerzo 4500` o mandame una foto del ticket.",
   transcriptionFailed:
     "🎤 No pude entender el audio.\n\nGrabalo de nuevo hablando claro y en español, o escribime el movimiento.",
+  aiHighDemand:
+    "⏳ La IA de Google está con mucha demanda en este momento.\n\nEs algo temporal y no depende del bot. Esperá un minuto y mandame el movimiento de nuevo (no se guardó nada).",
+  aiModelUnavailable:
+    "🛠️ El modelo de IA no está disponible o cambió de configuración.\n\nNo es un problema de tu mensaje: hay que revisar el bot. Avisale a Gastón y mientras tanto cargá el movimiento a mano en la hoja.",
   aiUnavailable:
     "🤖 No pude analizar el mensaje en este momento.\n\nIntentá de nuevo en unos segundos.",
   networkError: "📡 Hubo un problema de conexión.\n\nIntentá de nuevo en unos segundos.",

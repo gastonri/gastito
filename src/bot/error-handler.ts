@@ -30,6 +30,18 @@ export function toUserMessage(error: unknown): string {
     return Messages.networkError;
   }
 
+  if (/high demand|UNAVAILABLE|overloaded|"code":\s*50[023]/i.test(msg)) {
+    return Messages.aiHighDemand;
+  }
+
+  if (
+    /NOT_FOUND|no longer available|"code":\s*404|API key not valid|UNAUTHENTICATED|PERMISSION_DENIED|"code":\s*40[13]/i.test(
+      msg
+    )
+  ) {
+    return Messages.aiModelUnavailable;
+  }
+
   if (/gemini|generativelanguage|\b5\d\d\b|overloaded|unavailable/i.test(msg)) {
     return Messages.aiUnavailable;
   }
