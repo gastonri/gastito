@@ -110,6 +110,11 @@ app.post("/webhook", async (req: Request, res: Response) => {
       return;
     }
 
+    Logger.event("update_in", {
+      update_id: update.update_id,
+      type: update.callback_query ? "callback" : update.message ? "message" : "other",
+    });
+
     // Handle callback queries
     if (update.callback_query) {
       void callbackHandlers.handleCallback(update.callback_query).catch((error: unknown) => {

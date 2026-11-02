@@ -198,6 +198,11 @@ export interface GeminiCandidate {
 
 export interface GeminiResponse {
   candidates?: GeminiCandidate[];
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    thoughtsTokenCount?: number;
+  };
   error?: GeminiError;
 }
 

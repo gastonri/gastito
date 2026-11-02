@@ -21,19 +21,56 @@ export class GeminiClient implements AIClient {
    * Posts a generateContent request limiting the model's reasoning (the default level is slow
    * for this bot's extraction task). If the model rejects the setting, retries without it.
    */
-  private async post(url: string, payload: object): Promise<AxiosResponse<GeminiResponse>> {
+  private async post(
+    url: string,
+    payload: object,
+    meta: { op: string; keyIndex: number }
+  ): Promise<AxiosResponse<GeminiResponse>> {
     const level = config.ai.gemini.thinkingLevel;
-    if (!level) return axios.post<GeminiResponse>(url, payload);
+    const started = Date.now();
+    const base = {
+      op: meta.op,
+      model: this.modelName,
+      key: `${meta.keyIndex + 1}/${this.apiKeys.length}`,
+      thinking: level || "default",
+    };
+    const send = (body: object) => axios.post<GeminiResponse>(url, body);
+
     try {
-      return await axios.post<GeminiResponse>(url, {
-        ...payload,
-        generationConfig: { thinkingConfig: { thinkingLevel: level } },
-      });
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 400) {
-        Logger.log(`Gemini rejected thinkingLevel "${level}", retrying without it`);
-        return axios.post<GeminiResponse>(url, payload);
+      let response: AxiosResponse<GeminiResponse>;
+      if (!level) {
+        response = await send(payload);
+      } else {
+        try {
+          response = await send({
+            ...payload,
+            generationConfig: { thinkingConfig: { thinkingLevel: level } },
+          });
+        } catch (error) {
+          if (!(axios.isAxiosError(error) && error.response?.status === 400)) throw error;
+          Logger.event("gemini_thinking_rejected", { ...base, level });
+          response = await send(payload);
+        }
       }
+      const usage = response.data.usageMetadata;
+      Logger.event("gemini_call", {
+        ...base,
+        status: response.status,
+        ms: Date.now() - started,
+        prompt_tokens: usage?.promptTokenCount,
+        thought_tokens: usage?.thoughtsTokenCount,
+        output_tokens: usage?.candidatesTokenCount,
+      });
+      return response;
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const code = axios.isAxiosError(error) ? error.code : undefined;
+      Logger.event("gemini_call_failed", {
+        ...base,
+        status,
+        code,
+        ms: Date.now() - started,
+      });
       throw error;
     }
   }
@@ -48,7 +85,9 @@ export class GeminiClient implements AIClient {
     return null;
   }
 
-  private async executeWithFallback<T>(fn: (apiKey: string) => Promise<T>): Promise<T> {
+  private async executeWithFallback<T>(
+    fn: (apiKey: string, keyIndex: number) => Promise<T>
+  ): Promise<T> {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const keyIndex = this.getAvailableKeyIndex();
@@ -57,14 +96,15 @@ export class GeminiClient implements AIClient {
       }
 
       try {
-        return await fn(this.apiKeys[keyIndex]);
+        return await fn(this.apiKeys[keyIndex], keyIndex);
       } catch (error) {
         if (error instanceof GeminiAPIError && error.statusCode === 429) {
           const cooldownMs = config.ai.gemini.rateLimitCooldownMs;
           this.keyCooldowns.set(keyIndex, Date.now() + cooldownMs);
-          Logger.log(
-            `Gemini key ${keyIndex + 1}/${this.apiKeys.length} rate limited, cooldown ${cooldownMs / 1000}s`
-          );
+          Logger.event("gemini_key_cooldown", {
+            key: `${keyIndex + 1}/${this.apiKeys.length}`,
+            cooldown_s: cooldownMs / 1000,
+          });
           continue;
         }
         throw error;
@@ -73,14 +113,14 @@ export class GeminiClient implements AIClient {
   }
 
   async generateContent(prompt: string): Promise<string> {
-    return this.executeWithFallback(async (apiKey) => {
+    return this.executeWithFallback(async (apiKey, keyIndex) => {
       try {
         const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${apiKey}`;
         const payload = {
           contents: [{ parts: [{ text: prompt }] }],
         };
 
-        const response = await this.post(url, payload);
+        const response = await this.post(url, payload, { op: "text", keyIndex });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 
@@ -131,7 +171,7 @@ export class GeminiClient implements AIClient {
   }
 
   async generateContentWithVision(prompt: string, imageData: ImageData): Promise<string> {
-    return this.executeWithFallback(async (apiKey) => {
+    return this.executeWithFallback(async (apiKey, keyIndex) => {
       try {
         const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${apiKey}`;
         const payload = {
@@ -151,7 +191,7 @@ export class GeminiClient implements AIClient {
         };
 
         Logger.log(`Calling Gemini Vision API with model: ${this.modelName}`);
-        const response = await this.post(url, payload);
+        const response = await this.post(url, payload, { op: "vision", keyIndex });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 
@@ -215,7 +255,7 @@ export class GeminiClient implements AIClient {
   }
 
   async transcribeAudio(audioData: AudioData): Promise<string> {
-    return this.executeWithFallback(async (apiKey) => {
+    return this.executeWithFallback(async (apiKey, keyIndex) => {
       try {
         const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${apiKey}`;
         const prompt = `Transcribí este audio al español. El usuario está describiendo un gasto, ingreso o transferencia financiera.
@@ -244,7 +284,7 @@ IMPORTANTE:
         };
 
         Logger.log(`Calling Gemini Audio API with model: ${this.modelName}`);
-        const response = await this.post(url, payload);
+        const response = await this.post(url, payload, { op: "audio", keyIndex });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 

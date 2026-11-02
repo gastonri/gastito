@@ -10,43 +10,63 @@ export class UserFacingError extends Error {
   }
 }
 
-/** Maps any thrown error to a human-friendly message. Technical details only go to the logs. */
-export function toUserMessage(error: unknown): string {
-  if (error instanceof UserFacingError) return error.message;
-  if (!(error instanceof Error)) return Messages.genericError;
+export type ErrorKind =
+  | "user_facing"
+  | "quota"
+  | "no_transaction"
+  | "network"
+  | "ai_high_demand"
+  | "ai_model_unavailable"
+  | "ai_other"
+  | "unknown";
 
+/** Classifies an error so logs can be filtered by cause (`kind=`) and the message chosen. */
+export function classifyError(error: unknown): ErrorKind {
+  if (error instanceof UserFacingError) return "user_facing";
+  if (!(error instanceof Error)) return "unknown";
   const msg = error.message;
 
-  if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) {
-    const retryMatch = msg.match(/retry in ([\d.]+)s/i);
-    return retryMatch
-      ? Messages.quotaExceededRetry(Math.ceil(parseFloat(retryMatch[1])))
-      : Messages.quotaExceeded;
-  }
-
-  if (/No result from message handler/i.test(msg)) return Messages.noTransactionFound;
-
+  if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) return "quota";
+  if (/No result from message handler/i.test(msg)) return "no_transaction";
   if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|timeout|network|socket hang up/i.test(msg)) {
-    return Messages.networkError;
+    return "network";
   }
-
-  if (/high demand|UNAVAILABLE|overloaded|"code":\s*50[023]/i.test(msg)) {
-    return Messages.aiHighDemand;
-  }
-
+  if (/high demand|UNAVAILABLE|overloaded|"code":\s*50[023]/i.test(msg)) return "ai_high_demand";
   if (
     /NOT_FOUND|no longer available|"code":\s*404|API key not valid|UNAUTHENTICATED|PERMISSION_DENIED|"code":\s*40[13]/i.test(
       msg
     )
   ) {
-    return Messages.aiModelUnavailable;
+    return "ai_model_unavailable";
   }
+  if (/gemini|generativelanguage|\b5\d\d\b/i.test(msg)) return "ai_other";
+  return "unknown";
+}
 
-  if (/gemini|generativelanguage|\b5\d\d\b|overloaded|unavailable/i.test(msg)) {
-    return Messages.aiUnavailable;
+/** Maps any thrown error to a human-friendly message. Technical details only go to the logs. */
+export function toUserMessage(error: unknown): string {
+  switch (classifyError(error)) {
+    case "user_facing":
+      return (error as UserFacingError).message;
+    case "quota": {
+      const retryMatch = (error as Error).message.match(/retry in ([\d.]+)s/i);
+      return retryMatch
+        ? Messages.quotaExceededRetry(Math.ceil(parseFloat(retryMatch[1])))
+        : Messages.quotaExceeded;
+    }
+    case "no_transaction":
+      return Messages.noTransactionFound;
+    case "network":
+      return Messages.networkError;
+    case "ai_high_demand":
+      return Messages.aiHighDemand;
+    case "ai_model_unavailable":
+      return Messages.aiModelUnavailable;
+    case "ai_other":
+      return Messages.aiUnavailable;
+    default:
+      return Messages.genericError;
   }
-
-  return Messages.genericError;
 }
 
 /**

@@ -12,12 +12,7 @@ import { Logger } from "../utils/logger";
 import { getErrorMessage } from "../utils/text";
 import { formatMoney } from "../utils/format";
 import { Messages } from "./messages";
-import {
-  attachTipoCambio,
-  renderConfirmation,
-  setCategoria,
-  toggleDolar,
-} from "./confirmation";
+import { attachTipoCambio, renderConfirmation, setCategoria, toggleDolar } from "./confirmation";
 import { INGRESO_CATEGORIAS } from "../types";
 import { extractTextWithoutEmoji } from "../utils/text";
 import { escapeMarkdown, getArgentinaToday } from "../utils/format";
@@ -39,6 +34,18 @@ export class CallbackHandlers {
   }
 
   async handleCallback(callback: TelegramCallbackQuery): Promise<void> {
+    const started = Date.now();
+    const action = callback.data.split("_")[0];
+    try {
+      await this.dispatchCallback(callback);
+      Logger.event("callback_done", { action, ms: Date.now() - started });
+    } catch (error) {
+      Logger.event("callback_failed", { action, ms: Date.now() - started });
+      throw error;
+    }
+  }
+
+  private async dispatchCallback(callback: TelegramCallbackQuery): Promise<void> {
     const chatId = callback.message.chat.id;
     const messageId = callback.message.message_id;
     const data = callback.data;
@@ -178,7 +185,12 @@ export class CallbackHandlers {
           chatId,
           messageId,
           Messages.categoryPickIngreso(descripcion, item.datos.categoria || "-"),
-          ClarificationBuilder.buildIngresoCategoryPicker(operationId, itemIdx, INGRESO_CATEGORIAS, back)
+          ClarificationBuilder.buildIngresoCategoryPicker(
+            operationId,
+            itemIdx,
+            INGRESO_CATEGORIAS,
+            back
+          )
         );
         return;
       }
@@ -189,7 +201,12 @@ export class CallbackHandlers {
         chatId,
         messageId,
         Messages.categoryPickMacro(descripcion, escapeMarkdown(actual)),
-        ClarificationBuilder.buildMacroPicker(operationId, itemIdx, Object.keys(categoriasMap), back)
+        ClarificationBuilder.buildMacroPicker(
+          operationId,
+          itemIdx,
+          Object.keys(categoriasMap),
+          back
+        )
       );
     };
 
@@ -221,7 +238,13 @@ export class CallbackHandlers {
         chatId,
         messageId,
         Messages.categoryPickSub(escapeMarkdown(macro)),
-        ClarificationBuilder.buildSubPicker(operationId, itemIdx, macroIdx, subs, `ci_${operationId}_${itemIdx}`)
+        ClarificationBuilder.buildSubPicker(
+          operationId,
+          itemIdx,
+          macroIdx,
+          subs,
+          `ci_${operationId}_${itemIdx}`
+        )
       );
     } else if (kind === "cs" || kind === "cg") {
       const item = stored[nums[0]];
@@ -271,7 +294,8 @@ export class CallbackHandlers {
     const { text, keyboard } = renderConfirmation(stored, operationId);
     await this.sendOrEditMessage(chatId, messageId, text, keyboard);
 
-    const tipo = stored.find((r) => r.datos.cotizacion)?.datos.cotizacion === "BLUE" ? "blue" : "tarjeta";
+    const tipo =
+      stored.find((r) => r.datos.cotizacion)?.datos.cotizacion === "BLUE" ? "blue" : "tarjeta";
     await this.telegramClient.answerCallbackQuery(callbackId, Messages.fxChangedToast(tipo));
   }
 

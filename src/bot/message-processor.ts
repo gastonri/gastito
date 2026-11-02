@@ -9,8 +9,21 @@ import { UserPreferencesService } from "../services/user-preferences";
 import { pendingOperations } from "../services/pending-operations";
 import { sendProcessingError, UserFacingError } from "./error-handler";
 import { Messages } from "./messages";
+import { createTimings } from "../utils/timings";
+import { classifyError } from "./error-handler";
 import { animateLoading } from "./loading-animation";
 import { attachTipoCambio, renderConfirmation } from "./confirmation";
+
+/** Phases are logged as `<phase>_ms`; anything over the threshold is flagged `slow=true`. */
+const SLOW_MS = 15000;
+function logMessageEvent(name: string, fields: Record<string, string | number>): void {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    out[typeof v === "number" && k !== "items" && k !== "total_ms" ? `${k}_ms` : k] = v;
+  }
+  out.slow = typeof fields.total_ms === "number" && fields.total_ms > SLOW_MS;
+  Logger.event(name, out);
+}
 
 export interface MessageProcessorContext {
   message: TelegramMessage;
@@ -72,6 +85,9 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     userPreferences,
     sheetsClient,
   } = ctx;
+  const timings = createTimings();
+  const kind = message.photo ? "photo" : message.voice || message.audio ? "voice" : "text";
+  let items = 0;
   let loadingMessageId: number | null = null;
   let stopAnimation: () => Promise<void> = async () => {};
   const startLoading = async (text: string) => {
@@ -117,6 +133,8 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     }
 
     await stopAnimation();
+    timings.mark("ai");
+    items = results?.length ?? 0;
 
     if (!results || results.length === 0) {
       throw new Error("No result from message handler");
@@ -124,6 +142,8 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
 
     await flagDuplicates(results, sheetsClient);
     await attachTipoCambio(results, sheetsClient);
+
+    timings.mark("checks");
 
     const isModification = await isModifyingPending(results, chatId);
     let operationId: string;
@@ -134,6 +154,8 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       operationId = await pendingOperations.createOperation(results, chatId);
     }
 
+    timings.mark("pending");
+
     const { text: confirmationMessage, keyboard } = renderConfirmation(results, operationId);
 
     if (loadingMessageId) {
@@ -141,8 +163,16 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     } else {
       await telegramClient.sendMessage(chatId, confirmationMessage, keyboard);
     }
+    timings.mark("telegram");
+    logMessageEvent("msg_done", { kind, items, ...timings.phases(), total_ms: timings.total() });
   } catch (error) {
     await stopAnimation();
+    logMessageEvent("msg_failed", {
+      kind,
+      error_kind: classifyError(error),
+      ...timings.phases(),
+      total_ms: timings.total(),
+    });
     await sendProcessingError(chatId, error, loadingMessageId, telegramClient);
   }
 }
