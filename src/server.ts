@@ -15,9 +15,12 @@ import { ConversationHandler } from "./services/conversation-handler";
 import { initializeUserPreferences } from "./services/user-preferences";
 import { dispatchCommand } from "./bot/commands";
 import { processIncomingMessage } from "./bot/message-processor";
+import { RecentSet } from "./utils/dedupe";
 
 const app = express();
 app.use(express.json());
+
+const seenUpdates = new RecentSet();
 
 // Track last activity for monitoring
 let lastActivityTime = Date.now();
@@ -100,6 +103,13 @@ app.post("/webhook", async (req: Request, res: Response) => {
     lastActivityTime = Date.now();
     const update = req.body as TelegramUpdate;
 
+    // Telegram redelivers an update when the answer is slow; never process it twice.
+    if (typeof update.update_id === "number" && seenUpdates.has(update.update_id)) {
+      Logger.log(`Duplicate update ${update.update_id} ignored`);
+      res.status(200).send("OK");
+      return;
+    }
+
     // Handle callback queries
     if (update.callback_query) {
       void callbackHandlers.handleCallback(update.callback_query).catch((error: unknown) => {
@@ -143,9 +153,12 @@ app.post("/webhook", async (req: Request, res: Response) => {
       }
     }
 
+    // Answer Telegram right away; the AI call can take longer than its webhook timeout.
+    res.status(200).send("OK");
+
     telegramClient.sendChatAction(chatId, "typing");
 
-    await processIncomingMessage({
+    void processIncomingMessage({
       message,
       chatId,
       telegramClient,
@@ -154,9 +167,9 @@ app.post("/webhook", async (req: Request, res: Response) => {
       aiClientManager,
       userPreferences,
       sheetsClient,
+    }).catch((error: unknown) => {
+      Logger.error("Error processing message", error instanceof Error ? error : null);
     });
-
-    res.status(200).send("OK");
   } catch (error) {
     Logger.error("Error in webhook handler", error instanceof Error ? error : null);
     res.status(500).json({ error: "Internal server error" });
