@@ -9,6 +9,7 @@ import { UserPreferencesService } from "../services/user-preferences";
 import { pendingOperations } from "../services/pending-operations";
 import { sendProcessingError, UserFacingError } from "./error-handler";
 import { Messages } from "./messages";
+import { animateLoading } from "./loading-animation";
 import { attachTipoCambio, renderConfirmation } from "./confirmation";
 
 export interface MessageProcessorContext {
@@ -72,15 +73,22 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     sheetsClient,
   } = ctx;
   let loadingMessageId: number | null = null;
+  let stopAnimation: () => Promise<void> = async () => {};
+  const startLoading = async (text: string) => {
+    loadingMessageId = await telegramClient.sendMessage(chatId, text);
+    if (loadingMessageId) {
+      stopAnimation = animateLoading(telegramClient, chatId, loadingMessageId, text);
+    }
+  };
 
   try {
     let results: TransactionResult[] | undefined;
 
     if (message.photo) {
-      loadingMessageId = await telegramClient.sendMessage(chatId, Messages.loadingPhoto);
+      await startLoading(Messages.loadingPhoto);
       results = await messageHandlers.handleImageMessage(message);
     } else if (message.voice || message.audio) {
-      loadingMessageId = await telegramClient.sendMessage(chatId, Messages.loadingAudio);
+      await startLoading(Messages.loadingAudio);
 
       const audioFile = message.voice || message.audio!;
       const audioData = await audioProcessor.downloadAudio(audioFile.file_id);
@@ -93,6 +101,7 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
         throw new UserFacingError(Messages.transcriptionFailed);
       }
 
+      await stopAnimation();
       await telegramClient.editMessage(
         chatId,
         loadingMessageId!,
@@ -100,12 +109,14 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       );
       results = await messageHandlers.handleTextMessage({ ...message, text: textoTranscrito });
     } else if (message.text) {
-      loadingMessageId = await telegramClient.sendMessage(chatId, Messages.loadingText);
+      await startLoading(Messages.loadingText);
       results = await messageHandlers.handleTextMessage(message);
     } else {
       await telegramClient.sendMessage(chatId, Messages.unsupportedMessage);
       return;
     }
+
+    await stopAnimation();
 
     if (!results || results.length === 0) {
       throw new Error("No result from message handler");
@@ -131,6 +142,7 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       await telegramClient.sendMessage(chatId, confirmationMessage, keyboard);
     }
   } catch (error) {
+    await stopAnimation();
     await sendProcessingError(chatId, error, loadingMessageId, telegramClient);
   }
 }
