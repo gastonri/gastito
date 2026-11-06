@@ -55,6 +55,9 @@ export const Messages = {
   saveFailed:
     "❌ *No pude guardar el movimiento*\n\nTu registro sigue pendiente, no se perdió nada. Podés reintentar o cancelar.",
   saveFailedToast: "No se pudo guardar",
+  busyToast: "⏳ Esperá a que termine la operación en curso",
+  retrying: "🔁 Reintentando...",
+  retryExpired: "⏱️ Ya no tengo ese mensaje.\n\nReenviámelo y lo procesamos de nuevo.",
   partialFailure: (n: number) => `⚠️ ${n} movimiento(s) no se pudieron guardar.`,
   clarificationError: "❌ No pude procesar tu respuesta. Mandame el movimiento de nuevo.",
 

@@ -12,6 +12,8 @@ import { Logger } from "../utils/logger";
 import { getErrorMessage } from "../utils/text";
 import { formatMoney } from "../utils/format";
 import { Messages } from "./messages";
+import { failedMessages } from "../services/failed-messages";
+import type { TelegramMessage } from "../types";
 import { attachTipoCambio, renderConfirmation, setCategoria, toggleDolar } from "./confirmation";
 import { INGRESO_CATEGORIAS } from "../types";
 import { extractTextWithoutEmoji } from "../utils/text";
@@ -23,6 +25,9 @@ import type { WrittenRow } from "../types";
 
 export class CallbackHandlers {
   private conversationHandler: ConversationHandler | null = null;
+  private retryMessage: ((message: TelegramMessage) => Promise<void>) | null = null;
+  /** Chats with a button operation running; their other buttons are ignored meanwhile. */
+  private busyChats = new Set<number>();
 
   constructor(
     private telegramClient: TelegramClient,
@@ -33,15 +38,34 @@ export class CallbackHandlers {
     this.conversationHandler = handler;
   }
 
+  setMessageRetry(retry: (message: TelegramMessage) => Promise<void>): void {
+    this.retryMessage = retry;
+  }
+
   async handleCallback(callback: TelegramCallbackQuery): Promise<void> {
     const started = Date.now();
     const action = callback.data.split("_")[0];
+    const chatId = callback.message.chat.id;
+
+    // One operation at a time per chat: extra taps (double tap, other buttons) are ignored.
+    if (this.busyChats.has(chatId)) {
+      Logger.event("callback_ignored", { action, reason: "busy" });
+      try {
+        await this.telegramClient.answerCallbackQuery(callback.id, Messages.busyToast);
+      } catch {
+        /* the toast is best effort */
+      }
+      return;
+    }
+    this.busyChats.add(chatId);
     try {
       await this.dispatchCallback(callback);
       Logger.event("callback_done", { action, ms: Date.now() - started });
     } catch (error) {
       Logger.event("callback_failed", { action, ms: Date.now() - started });
       throw error;
+    } finally {
+      this.busyChats.delete(chatId);
     }
   }
 
@@ -62,6 +86,8 @@ export class CallbackHandlers {
       await this.handleEdit(callback.id, chatId, data);
     } else if (data.startsWith("dz_")) {
       await this.handleDanger(callback.id, chatId, messageId, data);
+    } else if (data.startsWith("rm_")) {
+      await this.handleRetryMessage(callback.id, chatId, messageId, data);
     } else if (data.startsWith("cl_")) {
       await this.handleClarification(callback.id, chatId, messageId, data);
     }
@@ -129,6 +155,26 @@ export class CallbackHandlers {
     const budgetNote = await this.buildBudgetNote(saved);
     if (budgetNote) successMessage += `\n\n${budgetNote}`;
     await this.sendSaveSuccess(chatId, messageId, callbackId, successMessage);
+  }
+
+  /** Re-runs a message whose processing failed, using the original stored in memory. */
+  private async handleRetryMessage(
+    callbackId: string,
+    chatId: number,
+    messageId: number,
+    data: string
+  ): Promise<void> {
+    const message = failedMessages.take(data.replace("rm_", ""));
+
+    if (!message || !this.retryMessage) {
+      await this.sendOrEditMessage(chatId, messageId, Messages.retryExpired);
+      await this.telegramClient.answerCallbackQuery(callbackId, Messages.operationExpiredToast);
+      return;
+    }
+
+    await this.sendOrEditMessage(chatId, messageId, Messages.retrying);
+    await this.telegramClient.answerCallbackQuery(callbackId, Messages.retrying);
+    await this.retryMessage(message);
   }
 
   private async handleCancel(

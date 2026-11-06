@@ -7,7 +7,9 @@ import { SheetsClient } from "../sheets/client";
 import { Logger } from "../utils/logger";
 import { UserPreferencesService } from "../services/user-preferences";
 import { pendingOperations } from "../services/pending-operations";
-import { sendProcessingError, UserFacingError } from "./error-handler";
+import { sendProcessingError, UserFacingError, isRetryable } from "./error-handler";
+import { failedMessages } from "../services/failed-messages";
+import { ClarificationBuilder } from "./clarification-builder";
 import { Messages } from "./messages";
 import { createTimings } from "../utils/timings";
 import { classifyError } from "./error-handler";
@@ -173,6 +175,9 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
       ...timings.phases(),
       total_ms: timings.total(),
     });
-    await sendProcessingError(chatId, error, loadingMessageId, telegramClient);
+    const keyboard = isRetryable(error)
+      ? ClarificationBuilder.buildRetryMessageKeyboard(failedMessages.save(message))
+      : undefined;
+    await sendProcessingError(chatId, error, loadingMessageId, telegramClient, keyboard);
   }
 }

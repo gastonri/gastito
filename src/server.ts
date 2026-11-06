@@ -46,6 +46,18 @@ const conversationHandler = new ConversationHandler(messageHandlers);
 
 // Wire up conversation handler to callback handlers
 callbackHandlers.setConversationHandler(conversationHandler);
+callbackHandlers.setMessageRetry((message) =>
+  processIncomingMessage({
+    message,
+    chatId: message.chat.id,
+    telegramClient,
+    messageHandlers,
+    audioProcessor,
+    aiClientManager,
+    userPreferences,
+    sheetsClient,
+  })
+);
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {

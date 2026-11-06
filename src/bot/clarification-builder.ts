@@ -213,6 +213,11 @@ export class ClarificationBuilder {
     return { inline_keyboard: rows };
   }
 
+  /** Keyboard shown when processing a message failed: re-runs it from the stored original. */
+  static buildRetryMessageKeyboard(failedId: string): InlineKeyboardMarkup {
+    return { inline_keyboard: [[{ text: Buttons.retry, callback_data: `rm_${failedId}` }]] };
+  }
+
   /**
    * Builds the keyboard shown when saving fails: retry (re-runs confirm) or cancel.
    */

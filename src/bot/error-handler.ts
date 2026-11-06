@@ -1,6 +1,7 @@
 import { Logger } from "../utils/logger";
 import { TelegramClient } from "./telegram";
 import { Messages } from "./messages";
+import type { InlineKeyboardMarkup } from "./clarification-builder";
 
 /** An error whose message is already safe and friendly to show to the user as-is. */
 export class UserFacingError extends Error {
@@ -45,6 +46,12 @@ export function classifyError(error: unknown): ErrorKind {
   return "unknown";
 }
 
+/** Whether sending the same message again could work (not for "nothing found" or bad input). */
+export function isRetryable(error: unknown): boolean {
+  const kind = classifyError(error);
+  return kind !== "user_facing" && kind !== "no_transaction";
+}
+
 /** Maps any thrown error to a human-friendly message. Technical details only go to the logs. */
 export function toUserMessage(error: unknown): string {
   switch (classifyError(error)) {
@@ -81,7 +88,8 @@ export async function sendProcessingError(
   chatId: number,
   error: unknown,
   loadingMessageId: number | null,
-  telegramClient: TelegramClient
+  telegramClient: TelegramClient,
+  keyboard?: InlineKeyboardMarkup
 ): Promise<void> {
   Logger.error("Error processing message", error instanceof Error ? error : null);
 
@@ -94,9 +102,9 @@ export async function sendProcessingError(
 
   try {
     if (loadingMessageId) {
-      await telegramClient.editMessage(chatId, loadingMessageId, errorText);
+      await telegramClient.editMessage(chatId, loadingMessageId, errorText, keyboard);
     } else {
-      await telegramClient.sendMessage(chatId, errorText);
+      await telegramClient.sendMessage(chatId, errorText, keyboard);
     }
   } catch (telegramError) {
     // If editing fails, try sending a new message
