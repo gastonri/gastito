@@ -89,11 +89,13 @@ export async function sendProcessingError(
   error: unknown,
   loadingMessageId: number | null,
   telegramClient: TelegramClient,
-  keyboard?: InlineKeyboardMarkup
+  keyboard?: InlineKeyboardMarkup,
+  detail?: string
 ): Promise<void> {
   Logger.error("Error processing message", error instanceof Error ? error : null);
 
   let errorText = toUserMessage(error);
+  if (detail) errorText += `\n\n${detail}`;
 
   // Telegram messages have a 4096 character limit, ensure we don't exceed it
   if (errorText.length > 4000) {

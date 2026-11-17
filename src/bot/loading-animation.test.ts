@@ -26,3 +26,31 @@ describe("loading animation", () => {
     expect(edits.length).toBe(count);
   });
 });
+
+describe("loading animation notices", () => {
+  it("shows a replacement text right away and keeps animating it", async () => {
+    const edits: string[] = [];
+    const client = {
+      editMessage: async (_c: number, _m: number, text: string) => {
+        edits.push(text);
+      },
+    };
+    const stop = animateLoading(client, 1, 2, "Procesando...", 1000);
+    stop.setText("🔁 Probando con otra key...");
+    await stop();
+    expect(edits).toEqual(["🔁 Probando con otra key..."]);
+  });
+
+  it("ignores text changes after it was stopped", async () => {
+    const edits: string[] = [];
+    const client = {
+      editMessage: async (_c: number, _m: number, text: string) => {
+        edits.push(text);
+      },
+    };
+    const stop = animateLoading(client, 1, 2, "Procesando...", 1000);
+    await stop();
+    stop.setText("tarde");
+    expect(edits).toEqual([]);
+  });
+});

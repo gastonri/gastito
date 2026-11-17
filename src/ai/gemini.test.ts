@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import axios from "axios";
 import { config } from "../config";
 import { GeminiAPIError } from "../utils/errors";
+import { aiRunStorage, createAiRun } from "./attempts";
 import { GeminiClient, isServerError, isTimeoutError, selectKeyIndex } from "./gemini";
 
 describe("isTimeoutError", () => {
@@ -110,5 +111,35 @@ describe("GeminiClient model rotation", () => {
     const { client, urls } = setup([apiError(503), ok("second key")]);
     expect(await client.generateContent("hi")).toBe("second key");
     expect(urls[1]).toContain("key=k2");
+  });
+
+  const timeoutError = () =>
+    Object.assign(new Error("timeout of 12000ms exceeded"), {
+      isAxiosError: true,
+      code: "ECONNABORTED",
+    });
+
+  it("skips the other keys of a model that timed out and goes to the next model", async () => {
+    const { client, urls } = setup([timeoutError(), ok("from b")]);
+    expect(await client.generateContent("hi")).toBe("from b");
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toContain("models/model-a");
+    expect(urls[1]).toContain("models/model-b");
+  });
+
+  it("tells the run which slots failed and which one answered", async () => {
+    const { client } = setup([timeoutError(), ok("from b")]);
+    const run = createAiRun();
+    const notices: Array<string | null> = [];
+    run.onSwitch = (_failure, next) => notices.push(next ? `${next.model}/${next.keyLabel}` : null);
+    await aiRunStorage.run(run, () => client.generateContent("hi"));
+    expect(run.failures).toEqual([{ model: "model-a", keyLabel: "key 1", reason: "timeout" }]);
+    expect(run.used).toEqual({ model: "model-b", keyLabel: "key 1" });
+    expect(notices).toEqual(["model-b/key 1"]);
+  });
+
+  it("works without a run (other callers, scripts)", async () => {
+    const { client } = setup([ok("plain")]);
+    expect(await client.generateContent("hi")).toBe("plain");
   });
 });

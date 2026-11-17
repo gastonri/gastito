@@ -45,8 +45,11 @@ export const config = {
       timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS || "12000", 10),
       heavyTimeoutMs: parseInt(process.env.GEMINI_HEAVY_TIMEOUT_MS || "45000", 10),
       // After a timeout the key goes last in line for this long (ms), so the next messages skip it
-      // Timeouts tolerated in one request before giving up (each one costs a full timeout)
-      maxTimeoutsPerRequest: parseInt(process.env.GEMINI_MAX_TIMEOUTS_PER_REQUEST || "2", 10),
+      // Timeouts tolerated in one request before giving up (each one costs a full timeout;
+      // a timeout skips the rest of that model, so 3 covers the 3 default models)
+      maxTimeoutsPerRequest: parseInt(process.env.GEMINI_MAX_TIMEOUTS_PER_REQUEST || "3", 10),
+      // Names shown to the user for each key in GEMINI_API_KEYS, in the same order
+      keyLabels: (process.env.GEMINI_KEY_LABELS || "").split(",").map((l) => l.trim()),
       slowKeyCooldownMs: parseInt(process.env.GEMINI_SLOW_KEY_COOLDOWN_MS || "30000", 10),
       rateLimitCooldownMs: parseInt(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || "60000", 10),
     },

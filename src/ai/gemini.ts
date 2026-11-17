@@ -4,6 +4,7 @@ import { Logger } from "../utils/logger";
 import { GeminiAPIError } from "../utils/errors";
 import { ImageData, AudioData, GeminiResponse, GeminiErrorDetail } from "../types";
 import { AIClient } from "./client";
+import { AiSlot, FailureReason, keyLabel, recordFailure, recordSuccess } from "./attempts";
 
 /** The request exceeded the configured timeout (axios: "timeout of 12000ms exceeded"). */
 export function isTimeoutError(error: unknown): boolean {
@@ -163,14 +164,28 @@ export class GeminiClient implements AIClient {
       const keyIndex = this.slotKeyIndex(slot);
       const model = this.slotModel(slot);
       const key = `${keyIndex + 1}/${this.apiKeys.length}`;
+      const current: AiSlot = { model, keyLabel: keyLabel(keyIndex) };
+      // Tells the bot (and so the user) that this slot failed and where the call goes next.
+      const reportFailure = (reason: FailureReason) => {
+        const nextSlot = this.getAvailableSlot(failed);
+        recordFailure(
+          { ...current, reason },
+          nextSlot === null
+            ? null
+            : { model: this.slotModel(nextSlot), keyLabel: keyLabel(this.slotKeyIndex(nextSlot)) }
+        );
+      };
 
       try {
-        return await fn(this.apiKeys[keyIndex], keyIndex, model);
+        const value = await fn(this.apiKeys[keyIndex], keyIndex, model);
+        recordSuccess(current);
+        return value;
       } catch (error) {
         if (error instanceof GeminiAPIError && error.statusCode === 429) {
           const cooldownMs = config.ai.gemini.rateLimitCooldownMs;
           this.keyCooldowns.set(slot, Date.now() + cooldownMs);
           Logger.event("gemini_key_cooldown", { model, key, cooldown_s: cooldownMs / 1000 });
+          reportFailure("rate_limit");
           continue;
         }
         if (error instanceof GeminiAPIError && error.statusCode === 404) {
@@ -186,15 +201,21 @@ export class GeminiClient implements AIClient {
             model,
             next: this.getAvailableSlot(failed) !== null,
           });
+          reportFailure("model_unavailable");
           continue;
         }
         if (isTimeoutError(error)) {
-          failed.add(slot);
           lastFailure = error as Error;
           timeouts++;
-          // Later messages try the other slots first instead of waiting on this one again.
+          // Hangs hit every key of a model at once, so skip the rest of this model for this
+          // request and deprioritize it for the next messages instead of waiting on each key.
           const slowMs = config.ai.gemini.slowKeyCooldownMs;
-          this.slowKeys.set(slot, Date.now() + slowMs);
+          const modelIndex = this.models.indexOf(model);
+          for (let k = 0; k < this.apiKeys.length; k++) {
+            const modelSlot = modelIndex * this.apiKeys.length + k;
+            failed.add(modelSlot);
+            this.slowKeys.set(modelSlot, Date.now() + slowMs);
+          }
           const next = this.getAvailableSlot(failed) !== null;
           Logger.event("gemini_timeout", {
             model,
@@ -202,6 +223,7 @@ export class GeminiClient implements AIClient {
             next_key: next,
             deprioritized_s: slowMs / 1000,
           });
+          reportFailure("timeout");
           // Bound the wait for the user: each timeout costs a full timeout period.
           if (timeouts >= config.ai.gemini.maxTimeoutsPerRequest) throw lastFailure;
           continue;
@@ -215,6 +237,7 @@ export class GeminiClient implements AIClient {
             status: (error as GeminiAPIError).statusCode,
             next_key: this.getAvailableSlot(failed) !== null,
           });
+          reportFailure("server_error");
           continue;
         }
         throw error;

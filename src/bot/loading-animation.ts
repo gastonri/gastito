@@ -11,6 +11,11 @@ export function loadingFrames(text: string): string[] {
   return [`${base}.`, `${base}..`, `${base}...`];
 }
 
+export type LoadingHandle = (() => Promise<void>) & {
+  /** Replaces the message text (e.g. a "switching model" notice); the dots keep animating. */
+  setText: (text: string) => void;
+};
+
 /**
  * Animates the dots of a "loading" message by editing it periodically.
  * Returns a stop function that waits for any in-flight edit, so a later edit
@@ -22,8 +27,8 @@ export function animateLoading(
   messageId: number,
   text: string,
   intervalMs = FRAME_INTERVAL_MS
-): () => Promise<void> {
-  const frames = loadingFrames(text);
+): LoadingHandle {
+  let frames = loadingFrames(text);
   let tick = 0;
   let stopped = false;
   let inFlight: Promise<void> = Promise.resolve();
@@ -37,9 +42,18 @@ export function animateLoading(
     inFlight = inFlight.then(() => client.editMessage(chatId, messageId, frame).catch(() => {}));
   }, intervalMs);
 
-  return async () => {
+  const stop = async () => {
     stopped = true;
     clearInterval(timer);
     await inFlight;
   };
+  const setText = (newText: string) => {
+    if (stopped) return;
+    frames = loadingFrames(newText);
+    tick = 0;
+    // Show it right away instead of waiting for the next frame.
+    const frame = frames[frames.length - 1];
+    inFlight = inFlight.then(() => client.editMessage(chatId, messageId, frame).catch(() => {}));
+  };
+  return Object.assign(stop, { setText });
 }

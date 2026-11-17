@@ -14,6 +14,8 @@ import { Messages } from "./messages";
 import { createTimings } from "../utils/timings";
 import { classifyError } from "./error-handler";
 import { animateLoading } from "./loading-animation";
+import { AiRun, aiRunStorage, createAiRun } from "../ai/attempts";
+import { runDetail, runFooter, switchNotice } from "./ai-run-notices";
 import { attachTipoCambio, renderConfirmation } from "./confirmation";
 
 /** Phases are logged as `<phase>_ms`; anything over the threshold is flagged `slow=true`. */
@@ -77,6 +79,12 @@ async function flagDuplicates(
  * instead of being rethrown, so the webhook can always respond 200 to Telegram.
  */
 export async function processIncomingMessage(ctx: MessageProcessorContext): Promise<void> {
+  // Every AI call made for this message reports its model/key switches to this run.
+  const run = createAiRun();
+  await aiRunStorage.run(run, () => processWithRun(ctx, run));
+}
+
+async function processWithRun(ctx: MessageProcessorContext, run: AiRun): Promise<void> {
   const {
     message,
     chatId,
@@ -92,11 +100,18 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
   let items = 0;
   let loadingMessageId: number | null = null;
   let stopAnimation: () => Promise<void> = async () => {};
+  let setLoadingText: (text: string) => void = () => {};
   const startLoading = async (text: string) => {
     loadingMessageId = await telegramClient.sendMessage(chatId, text);
     if (loadingMessageId) {
-      stopAnimation = animateLoading(telegramClient, chatId, loadingMessageId, text);
+      const animation = animateLoading(telegramClient, chatId, loadingMessageId, text);
+      stopAnimation = animation;
+      setLoadingText = animation.setText;
     }
+  };
+  run.onSwitch = (failure, next) => {
+    const notice = switchNotice(failure, next);
+    if (notice) setLoadingText(notice);
   };
 
   try {
@@ -158,7 +173,9 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
 
     timings.mark("pending");
 
-    const { text: confirmationMessage, keyboard } = renderConfirmation(results, operationId);
+    const { text: baseConfirmation, keyboard } = renderConfirmation(results, operationId);
+    const footer = runFooter(run);
+    const confirmationMessage = footer ? `${baseConfirmation}\n\n${footer}` : baseConfirmation;
 
     if (loadingMessageId) {
       await telegramClient.editMessage(chatId, loadingMessageId, confirmationMessage, keyboard);
@@ -178,6 +195,13 @@ export async function processIncomingMessage(ctx: MessageProcessorContext): Prom
     const keyboard = isRetryable(error)
       ? ClarificationBuilder.buildRetryMessageKeyboard(failedMessages.save(message))
       : undefined;
-    await sendProcessingError(chatId, error, loadingMessageId, telegramClient, keyboard);
+    await sendProcessingError(
+      chatId,
+      error,
+      loadingMessageId,
+      telegramClient,
+      keyboard,
+      runDetail(run)
+    );
   }
 }

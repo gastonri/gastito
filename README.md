@@ -126,7 +126,8 @@ Variables opcionales:
 | `GEMINI_HEAVY_TIMEOUT_MS` | Lo mismo para fotos y audios (default 45000) |
 | `GEMINI_RATE_LIMIT_COOLDOWN_MS` | Pausa de una key al llegar al límite (default 60000) |
 | `GEMINI_MODEL_NAMES` | Modelos a rotar, separados por coma y en orden de preferencia. La cuota gratuita es por modelo y por proyecto, así que cada modelo suma cupo. Si no se define se usa `GEMINI_MODEL_NAME` |
-| `GEMINI_MAX_TIMEOUTS_PER_REQUEST` | Timeouts que se toleran en un mismo mensaje antes de devolver error (default 2) |
+| `GEMINI_MAX_TIMEOUTS_PER_REQUEST` | Timeouts que se toleran en un mismo mensaje antes de devolver error. Un timeout descarta el resto de las keys de ese modelo y pasa al siguiente (default 3) |
+| `GEMINI_KEY_LABELS` | Nombre de cada key de `GEMINI_API_KEYS`, en el mismo orden y separados por coma (ej. `cuenta principal,cuenta respaldo`). Se muestran en los avisos cuando el bot cambia de key o de modelo |
 | `GEMINI_SLOW_KEY_COOLDOWN_MS` | Tras un timeout la key pasa al final de la fila por este tiempo, así los mensajes siguientes no esperan de nuevo (default 30000) |
 
 4. **Iniciar Redis para desarrollo local:**
