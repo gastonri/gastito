@@ -10,15 +10,54 @@ export function isTimeoutError(error: unknown): boolean {
   return error instanceof Error && /timeout of \d+ms exceeded/i.test(error.message);
 }
 
+/** Google answered with a server-side error (503 overloaded, 500, 502, 504): another key may work. */
+export function isServerError(error: unknown): boolean {
+  return (
+    error instanceof GeminiAPIError &&
+    error.statusCode !== undefined &&
+    error.statusCode >= 500 &&
+    error.statusCode <= 599
+  );
+}
+
+/**
+ * Picks the next key to try: the first one not already tried in this request and not rate limited.
+ * Keys that recently timed out go last, so a hanging key is not retried first on every message,
+ * but they are still used when nothing else is left.
+ */
+export function selectKeyIndex(
+  total: number,
+  tried: Set<number>,
+  rateLimitedUntil: Map<number, number>,
+  slowUntil: Map<number, number>,
+  now: number
+): number | null {
+  let slow: number | null = null;
+  for (let i = 0; i < total; i++) {
+    if (tried.has(i) || now < (rateLimitedUntil.get(i) ?? 0)) continue;
+    if (now < (slowUntil.get(i) ?? 0)) {
+      slow ??= i;
+      continue;
+    }
+    return i;
+  }
+  return slow;
+}
+
+/** How long a model that answered 404 is skipped. */
+const MODEL_UNAVAILABLE_MS = 60 * 60 * 1000;
+
 export class GeminiClient implements AIClient {
   private readonly apiKeys: string[];
   private readonly keyCooldowns: Map<number, number> = new Map();
-  private readonly modelName: string;
+  private readonly slowKeys: Map<number, number> = new Map();
+  private readonly models: string[];
+  private readonly thinkingUnsupported: Set<string> = new Set();
   private readonly baseUrl: string;
 
   constructor() {
     this.apiKeys = config.ai.gemini.apiKeys;
-    this.modelName = config.ai.gemini.modelName;
+    this.models = config.ai.gemini.modelNames;
     this.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
   }
 
@@ -29,13 +68,14 @@ export class GeminiClient implements AIClient {
   private async post(
     url: string,
     payload: object,
-    meta: { op: string; keyIndex: number }
+    meta: { op: string; keyIndex: number; model: string }
   ): Promise<AxiosResponse<GeminiResponse>> {
-    const level = config.ai.gemini.thinkingLevel;
+    // Models that already rejected the setting are called without it, saving a wasted request.
+    const level = this.thinkingUnsupported.has(meta.model) ? "" : config.ai.gemini.thinkingLevel;
     const started = Date.now();
     const base = {
       op: meta.op,
-      model: this.modelName,
+      model: meta.model,
       key: `${meta.keyIndex + 1}/${this.apiKeys.length}`,
       thinking: level || "default",
     };
@@ -57,6 +97,7 @@ export class GeminiClient implements AIClient {
           if (!(axios.isAxiosError(error) && error.response?.status === 400)) throw error;
           Logger.event("gemini_thinking_rejected", { ...base, level });
           response = await send(payload);
+          this.thinkingUnsupported.add(meta.model);
         }
       }
       const usage = response.data.usageMetadata;
@@ -82,49 +123,97 @@ export class GeminiClient implements AIClient {
     }
   }
 
-  private getAvailableKeyIndex(exclude: Set<number> = new Set()): number | null {
-    const now = Date.now();
-    for (let i = 0; i < this.apiKeys.length; i++) {
-      if (!exclude.has(i) && now >= (this.keyCooldowns.get(i) ?? 0)) {
-        return i;
-      }
-    }
-    return null;
+  /**
+   * A slot is one (model, key) pair. Slots are ordered model first: every key is tried on the
+   * preferred model before moving to the next one, because free-tier quotas are per model.
+   */
+  private slotModel(slot: number): string {
+    return this.models[Math.floor(slot / this.apiKeys.length)];
+  }
+
+  private slotKeyIndex(slot: number): number {
+    return slot % this.apiKeys.length;
+  }
+
+  private getAvailableSlot(tried: Set<number> = new Set()): number | null {
+    return selectKeyIndex(
+      this.models.length * this.apiKeys.length,
+      tried,
+      this.keyCooldowns,
+      this.slowKeys,
+      Date.now()
+    );
   }
 
   private async executeWithFallback<T>(
-    fn: (apiKey: string, keyIndex: number) => Promise<T>
+    fn: (apiKey: string, keyIndex: number, model: string) => Promise<T>
   ): Promise<T> {
-    // Keys that already timed out for this request: do not wait on them twice.
-    const timedOut = new Set<number>();
-    let lastTimeout: Error | null = null;
+    // Slots that already timed out or failed on the server for this request: do not retry them.
+    const failed = new Set<number>();
+    let lastFailure: Error | null = null;
+    let timeouts = 0;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const keyIndex = this.getAvailableKeyIndex(timedOut);
-      if (keyIndex === null) {
-        if (lastTimeout) throw lastTimeout;
-        throw new GeminiAPIError("All Gemini API keys are rate limited", 429);
+      const slot = this.getAvailableSlot(failed);
+      if (slot === null) {
+        if (lastFailure) throw lastFailure;
+        throw new GeminiAPIError("All Gemini models and API keys are rate limited", 429);
       }
+      const keyIndex = this.slotKeyIndex(slot);
+      const model = this.slotModel(slot);
+      const key = `${keyIndex + 1}/${this.apiKeys.length}`;
 
       try {
-        return await fn(this.apiKeys[keyIndex], keyIndex);
+        return await fn(this.apiKeys[keyIndex], keyIndex, model);
       } catch (error) {
         if (error instanceof GeminiAPIError && error.statusCode === 429) {
           const cooldownMs = config.ai.gemini.rateLimitCooldownMs;
-          this.keyCooldowns.set(keyIndex, Date.now() + cooldownMs);
-          Logger.event("gemini_key_cooldown", {
-            key: `${keyIndex + 1}/${this.apiKeys.length}`,
-            cooldown_s: cooldownMs / 1000,
+          this.keyCooldowns.set(slot, Date.now() + cooldownMs);
+          Logger.event("gemini_key_cooldown", { model, key, cooldown_s: cooldownMs / 1000 });
+          continue;
+        }
+        if (error instanceof GeminiAPIError && error.statusCode === 404) {
+          // The model does not exist (or was retired) for this key: skip it on every key for a while.
+          const blockedUntil = Date.now() + MODEL_UNAVAILABLE_MS;
+          for (let k = 0; k < this.apiKeys.length; k++) {
+            const modelSlot = this.models.indexOf(model) * this.apiKeys.length + k;
+            this.keyCooldowns.set(modelSlot, blockedUntil);
+            failed.add(modelSlot);
+          }
+          lastFailure = error;
+          Logger.event("gemini_model_unavailable", {
+            model,
+            next: this.getAvailableSlot(failed) !== null,
           });
           continue;
         }
         if (isTimeoutError(error)) {
-          timedOut.add(keyIndex);
-          lastTimeout = error as Error;
+          failed.add(slot);
+          lastFailure = error as Error;
+          timeouts++;
+          // Later messages try the other slots first instead of waiting on this one again.
+          const slowMs = config.ai.gemini.slowKeyCooldownMs;
+          this.slowKeys.set(slot, Date.now() + slowMs);
+          const next = this.getAvailableSlot(failed) !== null;
           Logger.event("gemini_timeout", {
-            key: `${keyIndex + 1}/${this.apiKeys.length}`,
-            next_key: this.getAvailableKeyIndex(timedOut) !== null,
+            model,
+            key,
+            next_key: next,
+            deprioritized_s: slowMs / 1000,
+          });
+          // Bound the wait for the user: each timeout costs a full timeout period.
+          if (timeouts >= config.ai.gemini.maxTimeoutsPerRequest) throw lastFailure;
+          continue;
+        }
+        if (isServerError(error)) {
+          failed.add(slot);
+          lastFailure = error as Error;
+          Logger.event("gemini_server_error", {
+            model,
+            key,
+            status: (error as GeminiAPIError).statusCode,
+            next_key: this.getAvailableSlot(failed) !== null,
           });
           continue;
         }
@@ -134,14 +223,14 @@ export class GeminiClient implements AIClient {
   }
 
   async generateContent(prompt: string): Promise<string> {
-    return this.executeWithFallback(async (apiKey, keyIndex) => {
+    return this.executeWithFallback(async (apiKey, keyIndex, model) => {
       try {
-        const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${apiKey}`;
+        const url = `${this.baseUrl}/models/${model}:generateContent?key=${apiKey}`;
         const payload = {
           contents: [{ parts: [{ text: prompt }] }],
         };
 
-        const response = await this.post(url, payload, { op: "text", keyIndex });
+        const response = await this.post(url, payload, { op: "text", keyIndex, model });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 
@@ -192,9 +281,9 @@ export class GeminiClient implements AIClient {
   }
 
   async generateContentWithVision(prompt: string, imageData: ImageData): Promise<string> {
-    return this.executeWithFallback(async (apiKey, keyIndex) => {
+    return this.executeWithFallback(async (apiKey, keyIndex, model) => {
       try {
-        const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${apiKey}`;
+        const url = `${this.baseUrl}/models/${model}:generateContent?key=${apiKey}`;
         const payload = {
           contents: [
             {
@@ -211,8 +300,8 @@ export class GeminiClient implements AIClient {
           ],
         };
 
-        Logger.log(`Calling Gemini Vision API with model: ${this.modelName}`);
-        const response = await this.post(url, payload, { op: "vision", keyIndex });
+        Logger.log(`Calling Gemini Vision API with model: ${model}`);
+        const response = await this.post(url, payload, { op: "vision", keyIndex, model });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 
@@ -276,9 +365,9 @@ export class GeminiClient implements AIClient {
   }
 
   async transcribeAudio(audioData: AudioData): Promise<string> {
-    return this.executeWithFallback(async (apiKey, keyIndex) => {
+    return this.executeWithFallback(async (apiKey, keyIndex, model) => {
       try {
-        const url = `${this.baseUrl}/models/${this.modelName}:generateContent?key=${apiKey}`;
+        const url = `${this.baseUrl}/models/${model}:generateContent?key=${apiKey}`;
         const prompt = `Transcribí este audio al español. El usuario está describiendo un gasto, ingreso o transferencia financiera.
 Transcribí TODO el contenido del audio de forma literal y completa, sin resumir ni interpretar.
 Si el audio está en otro idioma, traducilo al español primero y luego transcribilo.
@@ -304,8 +393,8 @@ IMPORTANTE:
           ],
         };
 
-        Logger.log(`Calling Gemini Audio API with model: ${this.modelName}`);
-        const response = await this.post(url, payload, { op: "audio", keyIndex });
+        Logger.log(`Calling Gemini Audio API with model: ${model}`);
+        const response = await this.post(url, payload, { op: "audio", keyIndex, model });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const json: GeminiResponse = response.data;
 

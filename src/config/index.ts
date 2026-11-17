@@ -32,11 +32,22 @@ export const config = {
             .filter(Boolean)
         : [process.env.GEMINI_API_KEY || ""].filter(Boolean),
       modelName: process.env.GEMINI_MODEL_NAME || "gemini-3.6-flash",
+      // Models to rotate through, in order of preference (free-tier quotas are per model).
+      // Defaults to the single GEMINI_MODEL_NAME.
+      modelNames: process.env.GEMINI_MODEL_NAMES
+        ? process.env.GEMINI_MODEL_NAMES.split(",")
+            .map((m) => m.trim())
+            .filter(Boolean)
+        : [process.env.GEMINI_MODEL_NAME || "gemini-3.6-flash"],
       // "minimal" keeps extraction fast; set GEMINI_THINKING_LEVEL to "" to use the model default
       thinkingLevel: process.env.GEMINI_THINKING_LEVEL ?? "minimal",
       // Max wait for a text call before retrying with the next key; photos and audio get more time
       timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS || "12000", 10),
       heavyTimeoutMs: parseInt(process.env.GEMINI_HEAVY_TIMEOUT_MS || "45000", 10),
+      // After a timeout the key goes last in line for this long (ms), so the next messages skip it
+      // Timeouts tolerated in one request before giving up (each one costs a full timeout)
+      maxTimeoutsPerRequest: parseInt(process.env.GEMINI_MAX_TIMEOUTS_PER_REQUEST || "2", 10),
+      slowKeyCooldownMs: parseInt(process.env.GEMINI_SLOW_KEY_COOLDOWN_MS || "30000", 10),
       rateLimitCooldownMs: parseInt(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || "60000", 10),
     },
     anthropic: {
